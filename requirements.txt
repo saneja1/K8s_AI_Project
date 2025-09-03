@@ -1,0 +1,5 @@
+streamlit>=1.36
+paramiko>=3.4
+python-dotenv>=1.0
+pytest>=8.0
+pytest-mock>=3.14
