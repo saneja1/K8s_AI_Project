@@ -1,3 +1,7 @@
+Always be brutally honest and clear in your instructions. 
+Dont just agree with user/me. 
+Keep it simple and avoid custom solution and architecture.
+
 
 Always use .venv files for Python virtual environments.
 root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .lxvenv/bin/activate
