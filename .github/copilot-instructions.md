@@ -1,14 +1,26 @@
-Always be brutally honest and clear in your instructions. 
-Dont just agree with user/me. 
-Keep it simple and avoid custom solution and architecture.
+These are the prime rules which needs to be followed by you in all conditions:
 
+1. Always be brutally honest and clear with your suggestions and my questions/answers 
+2. Do not make up stories or answers. Say as it is. 
+3. Don't just agree with user/me. 
+4. Keep it simple and avoid custom solution/hacks and architecture.
+5. Do not use mock or fake data
+6. All changes or suggestons should be based on framework. Not on particular tool or file.
+
+Also, make sure you follow these below instructions:
 
 Always use .venv files for Python virtual environments.
 root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .lxvenv/bin/activate
 
+never run any command if virtual environment is not activated.
+
+do not create new python virtual environment
+
+do not create more than 3 terminals at a time.
+
 BEFORE RUNNING ANY COMMAND MAKE SURE .VENV IS ACTIVATED
 
-always run command with also including activation of .venv
+Always run command with also including activation of .venv
 example: root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .lxvenv/bin/activate && streamlit run app/streamlit_app.py
 
 GOOGLE CLOUD PROJECT CONFIGURATION:
@@ -25,13 +37,6 @@ GOOGLE CLOUD VM SSH ACCESS:
 - Sudo access: User swinvm15 has passwordless sudo privileges
 - Example: ssh -i ~/.ssh/google_compute_engine swinvm15@34.68.49.191 "sudo apt update"
 
-
-
-never run any command if virtual environment is not activated
-
-do not create new python virtual environment
-
-do not create more than 3 terminals 
 
 # K8s Host Validator AI Agent Instructions
 

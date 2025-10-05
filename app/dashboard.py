@@ -228,14 +228,51 @@ def main():
         border-right: 1px solid #333333 !important;
     }
     
-    /* Target the main group headers (CPU, MEMORY, DISK) */
+    /* Force ALL header text to be horizontally centered */
+    [data-testid="stDataFrame"] th div,
+    [data-testid="stDataFrame"] th span,
+    [data-testid="stDataFrame"] th p,
+    [data-testid="stDataFrame"] th * {
+        text-align: center !important;
+        justify-content: center !important;
+        margin: 0 auto !important;
+        width: 100% !important;
+    }
+    
+    /* Target the main group headers (CPU, MEMORY, DISK) - fix vertical centering */
     [data-testid="stDataFrame"] thead tr:first-child th {
         background-color: #1e1e1e !important;
-        color: #3498db !important; /* Blue color for the main headers like in the image */
+        color: #3498db !important;
         text-align: center !important;
         font-weight: bold !important;
         font-size: 1.1rem !important;
-        padding: 12px 8px !important;
+        padding: 0 !important;
+        height: 50px !important;
+        vertical-align: middle !important;
+        position: relative !important;
+    }
+    
+    /* Force the group header content to be absolutely centered */
+    [data-testid="stDataFrame"] thead tr:first-child th > div {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        height: 100% !important;
+        width: 100% !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+    }
+    
+    /* Additional targeting for nested divs in group headers */
+    [data-testid="stDataFrame"] thead tr:first-child th div div {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        height: 100% !important;
+        width: 100% !important;
     }
     
     /* Target all th elements to ensure vertical centering */
@@ -243,7 +280,13 @@ def main():
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
-        min-height: 40px !important;
+        height: 100% !important;
+        width: 100% !important;
+    }
+    
+    /* Ensure all header rows have consistent height */
+    [data-testid="stDataFrame"] thead tr th {
+        height: 50px !important;
     }
     
     /* Target the body of the table */
@@ -260,6 +303,17 @@ def main():
         border: none !important;
         border-right: 1px solid #333333 !important;
         border-top: 1px solid #333333 !important;
+    }
+    
+    /* Force all header text to be centered with line-height */
+    [data-testid="stDataFrame"] th {
+        line-height: 50px !important;
+    }
+    
+    /* Override Streamlit's default table cell styling for headers */
+    [data-testid="stDataFrame"] thead tr:first-child th * {
+        vertical-align: middle !important;
+        line-height: 50px !important;
     }
     
     /* Center group headers with blue styling */
@@ -567,11 +621,37 @@ def main():
                 # Create multi-index columns
                 df_resources.columns = pd.MultiIndex.from_tuples(df_resources.columns)
                 
-                # Display with streamlit in a styled container
+                # Display with streamlit using styled dataframe for proper centering
                 st.markdown('<div class="dashboard-metrics">', unsafe_allow_html=True)
-                # Apply custom styling to make it look better
+                
+                # Use styled dataframe to force center alignment
+                styled_df = df_resources.style.set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('text-align', 'center'),
+                        ('background-color', '#1e1e1e'),
+                        ('color', 'white'),
+                        ('font-weight', 'bold'),
+                        ('padding', '10px'),
+                        ('border', '1px solid #333333')
+                    ]},
+                    {'selector': 'td', 'props': [
+                        ('text-align', 'center'),
+                        ('background-color', '#1e1e1e'),
+                        ('color', 'white'),
+                        ('padding', '8px'),
+                        ('border', '1px solid #333333')
+                    ]},
+                    {'selector': 'thead tr:first-child th', 'props': [
+                        ('text-align', 'center'),
+                        ('color', '#3498db'),
+                        ('font-size', '1.1rem')
+                    ]}
+                ]).set_properties(**{
+                    'text-align': 'center'
+                })
+                
                 st.dataframe(
-                    df_resources,
+                    styled_df,
                     width='stretch',
                     height=300,
                     hide_index=True
