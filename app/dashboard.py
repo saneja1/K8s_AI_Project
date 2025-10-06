@@ -49,11 +49,9 @@ VM_TYPES = {
 def get_cluster_info():
     """Get basic cluster information and node status."""
     try:
-        # Get nodes using kubectl on the control plane node via gcloud SSH
+        # Get nodes using kubectl directly (via SSH tunnel)
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-node-1", 
-            "--zone=us-central1-a",
-            "--command=kubectl get nodes -o json"
+            "kubectl", "get", "nodes", "-o", "json"
         ], capture_output=True, text=True, timeout=30)
         
         nodes_data = []
@@ -101,13 +99,9 @@ def get_cluster_info():
 def get_pods_info():
     """Get information about all pods in the cluster."""
     try:
-        # Get pods via SSH to master node
+        # Get pods using kubectl directly (via SSH tunnel)
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-node-1",
-            "--command", "kubectl get pods --all-namespaces -o json",
-            "--zone", "us-central1-a",
-            "--project", "beaming-age-463822-k7", 
-            "--quiet"
+            "kubectl", "get", "pods", "--all-namespaces", "-o", "json"
         ], capture_output=True, text=True, timeout=15)
         
         pods_data = []
@@ -509,8 +503,8 @@ def main():
         
         # Define our VMs directly (since we know them)
         vm_list = [
-            {"name": "k8s-node-1", "zone": "us-central1-a", "ip": "34.68.49.191"},
-            {"name": "k8s-node-2", "zone": "us-central1-c", "ip": "34.70.61.44"}
+            {"name": "k8s-master-001", "zone": "us-central1-a", "ip": "34.135.232.124"},
+            {"name": "k8s-worker-01", "zone": "us-central1-a", "ip": "34.133.61.216"}
         ]
         
         if vm_list:
@@ -529,9 +523,9 @@ def main():
             for vm_config in vm_list:
                 # Set VM info
                 k8s_status = "� VM Running"
-                k8s_role = "Master" if vm_config['name'] == 'k8s-node-1' else "Worker"
+                k8s_role = "Master" if vm_config['name'] == 'k8s-master-001' else "Worker"
                 k8s_version = "v1.28.15"
-                internal_ip = "10.128.0.3" if vm_config['name'] == 'k8s-node-1' else "10.128.0.4"
+                internal_ip = "10.128.0.6" if vm_config['name'] == 'k8s-master-001' else "10.128.0.7"
                 
                 # Use static data with CPU usage for now to make it fast
                 vm_resources = {
