@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import time
 from datetime import datetime
 import re
+import pickle
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -15,6 +17,155 @@ load_dotenv()
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from core.system import check_requirements, check_requirements_cloud
+
+# Log file path
+LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
+LOG_FILE.parent.mkdir(exist_ok=True)
+
+def load_logs_from_file():
+    """Load logs from persistent file."""
+    if LOG_FILE.exists():
+        try:
+            with open(LOG_FILE, 'rb') as f:
+                data = pickle.load(f)
+                return data.get('logs', []), data.get('started', datetime.now())
+        except:
+            return [], datetime.now()
+    return [], datetime.now()
+
+def save_logs_to_file(logs, started_time):
+    """Save logs to persistent file."""
+    try:
+        with open(LOG_FILE, 'wb') as f:
+            pickle.dump({'logs': logs, 'started': started_time}, f)
+    except Exception as e:
+        print(f"Error saving logs: {e}")
+
+# Initialize session state for logs and startup time
+if 'command_logs' not in st.session_state:
+    # Load from file if exists, otherwise start fresh
+    logs, started = load_logs_from_file()
+    st.session_state.command_logs = logs
+    st.session_state.dashboard_started = started
+    
+    # If this is a fresh start (no logs), record it
+    if not logs:
+        st.session_state.dashboard_started = datetime.now()
+        save_logs_to_file([], st.session_state.dashboard_started)
+
+# Initialize session state for data freshness tracking
+if 'vm_data_timestamp' not in st.session_state:
+    st.session_state.vm_data_timestamp = None
+if 'vm_data_status' not in st.session_state:
+    st.session_state.vm_data_status = 'unknown'
+if 'pod_data_timestamp' not in st.session_state:
+    st.session_state.pod_data_timestamp = None
+if 'pod_data_status' not in st.session_state:
+    st.session_state.pod_data_status = 'unknown'
+
+def log_command(command, status="Running", details=""):
+    """Log a command execution with timestamp."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = {
+        'timestamp': timestamp,
+        'command': command,
+        'status': status,
+        'details': details
+    }
+    st.session_state.command_logs.append(log_entry)
+    
+    # Keep only last 50 logs
+    if len(st.session_state.command_logs) > 50:
+        st.session_state.command_logs = st.session_state.command_logs[-50:]
+    
+    # Save to file after each log
+    save_logs_to_file(st.session_state.command_logs, st.session_state.dashboard_started)
+
+def display_command_logs(tab_name=""):
+    """Display command execution logs."""
+    if st.session_state.command_logs:
+        st.markdown("### 📋 Command Execution Logs")
+        
+        # Show dashboard info
+        uptime = datetime.now() - st.session_state.dashboard_started
+        st.info(f"🚀 Dashboard started: {st.session_state.dashboard_started.strftime('%Y-%m-%d %H:%M:%S')} (Uptime: {str(uptime).split('.')[0]}) | Total logs: {len(st.session_state.command_logs)}/50")
+        
+        # Add clear logs button with unique key per tab
+        if st.button("🗑️ Clear All Logs", key=f"clear_logs_{tab_name}"):
+            st.session_state.command_logs = []
+            st.session_state.dashboard_started = datetime.now()
+            save_logs_to_file([], st.session_state.dashboard_started)
+            st.rerun()
+        
+        # Create logs dataframe
+        logs_df = pd.DataFrame(st.session_state.command_logs)
+        # Reverse to show newest first
+        logs_df = logs_df.iloc[::-1].reset_index(drop=True)
+        
+        # Color code status
+        def color_status(row):
+            if row['status'] == '✅ Success':
+                return ['background-color: #1e4620'] * len(row)
+            elif row['status'] == '❌ Failed':
+                return ['background-color: #4a1a1a'] * len(row)
+            else:
+                return ['background-color: #1a3a4a'] * len(row)
+        
+        styled_logs = logs_df.style.apply(color_status, axis=1)
+        st.dataframe(styled_logs, use_container_width=True, height=300)
+    else:
+        st.info("No commands executed yet")
+
+def is_data_fresh(timestamp, max_age_seconds=30):
+    """Check if data is fresh (within max_age_seconds)."""
+    if timestamp is None:
+        return False
+    age = (datetime.now() - timestamp).total_seconds()
+    return age <= max_age_seconds
+
+def format_time_ago(timestamp):
+    """Format datetime as 'X seconds/minutes ago'."""
+    if timestamp is None:
+        return 'Never'
+    elapsed = (datetime.now() - timestamp).total_seconds()
+    if elapsed < 60:
+        return f"{int(elapsed)}s ago"
+    elif elapsed < 3600:
+        return f"{int(elapsed / 60)}m ago"
+    else:
+        return f"{int(elapsed / 3600)}h ago"
+
+def get_live_indicator_html(data_type='vm'):
+    """Generate HTML for live status indicator based on data freshness."""
+    if data_type == 'vm':
+        timestamp = st.session_state.vm_data_timestamp
+        status = st.session_state.vm_data_status
+    else:  # pod
+        timestamp = st.session_state.pod_data_timestamp
+        status = st.session_state.pod_data_status
+    
+    is_fresh = is_data_fresh(timestamp)
+    
+    if status == 'success' and is_fresh:
+        # Green pulsing dot - data is fresh
+        indicator_class = 'live-indicator'
+        status_text = 'LIVE'
+        age = int((datetime.now() - timestamp).total_seconds()) if timestamp else 0
+        tooltip = f'Data updated {age}s ago'
+    elif status == 'success' and not is_fresh:
+        # Yellow static dot - data is stale
+        indicator_class = 'stale-indicator'
+        status_text = 'STALE'
+        age = int((datetime.now() - timestamp).total_seconds()) if timestamp else 0
+        tooltip = f'Data is {age}s old (stale)'
+    else:
+        # Red static dot - error or no data
+        indicator_class = 'error-indicator'
+        status_text = 'ERROR'
+        tooltip = 'Failed to fetch data'
+    
+    return f'''<span class="{indicator_class}" title="{tooltip}"></span>
+               <span style="font-size: 0.7rem; color: #888; margin-right: 10px;">{status_text}</span>'''
 
 # Configuration from environment variables
 DEFAULT_SSH_PORT = int(os.getenv('SSH_PORT', 22))
@@ -99,6 +250,9 @@ def get_cluster_info():
 def get_pods_info():
     """Get information about all pods in the cluster."""
     try:
+        # Log command execution
+        log_command("kubectl get pods --all-namespaces -o json", "Running", "Fetching pod data from cluster")
+        
         # Get pods using kubectl directly (via SSH tunnel)
         result = subprocess.run([
             "kubectl", "get", "pods", "--all-namespaces", "-o", "json"
@@ -107,6 +261,14 @@ def get_pods_info():
         pods_data = []
         if result.returncode == 0:
             pods_json = json.loads(result.stdout)
+            pod_count = len(pods_json.get('items', []))
+            log_command("kubectl get pods --all-namespaces", "✅ Success", f"Found {pod_count} pods")
+            
+            # Update timestamp and status for successful fetch
+            fetch_time = datetime.now()
+            st.session_state.pod_data_timestamp = fetch_time
+            st.session_state.pod_data_status = 'success'
+            
             for pod in pods_json.get('items', []):
                 pod_info = {
                     'name': pod['metadata']['name'],
@@ -114,7 +276,8 @@ def get_pods_info():
                     'status': pod['status'].get('phase', 'Unknown'),
                     'node': pod['spec'].get('nodeName', 'Unknown'),
                     'ready': '0/0',
-                    'restarts': 0
+                    'restarts': 0,
+                    'fetch_timestamp': fetch_time
                 }
                 
                 # Calculate ready containers
@@ -127,41 +290,80 @@ def get_pods_info():
                 pod_info['restarts'] = sum(c.get('restartCount', 0) for c in container_statuses)
                 
                 pods_data.append(pod_info)
+        else:
+            log_command("kubectl get pods", "❌ Failed", f"Error: {result.stderr[:100]}")
+            st.session_state.pod_data_status = 'error'
         
         return pods_data
     except Exception as e:
+        log_command("kubectl get pods", "❌ Failed", f"Exception: {str(e)}")
+        st.session_state.pod_data_status = 'error'
         return []
 
 def get_vm_resources(vm_name, zone="us-central1-a"):
-    """Get detailed system resources from a VM using SSH."""
+    """Get detailed system resources from a VM using SSH - OPTIMIZED single SSH call."""
     try:
-        commands = {
-            'cpu_count': 'nproc',
-            'memory_total': 'free -m | awk "NR==2{print $2}"',
-            'memory_used': 'free -m | awk "NR==2{print $3}"',
-            'memory_available': 'free -m | awk "NR==2{print $7}"',
-            'disk_total': 'df -BG / | tail -1 | awk "{print $2}" | sed "s/G//"',
-            'disk_used': 'df -BG / | tail -1 | awk "{print $3}" | sed "s/G//"',
-            'disk_available': 'df -BG / | tail -1 | awk "{print $4}" | sed "s/G//"'
-        }
+        log_command(f"gcloud compute ssh {vm_name}", "Running", f"Fetching metrics from {vm_name}")
+        
+        # Simple, working command - tested manually
+        combined_command = (
+            'echo CPU_COUNT:$(nproc) && '
+            'echo MEM_TOTAL:$(free -g | awk "NR==2{print $2}") && '
+            'echo MEM_USED:$(free -g | awk "NR==2{print $3}") && '
+            'echo MEM_AVAIL:$(free -g | awk "NR==2{print $7}") && '
+            'echo DISK_TOTAL:$(df -BG / | tail -1 | awk "{print $2}" | sed "s/G//") && '
+            'echo DISK_USED:$(df -BG / | tail -1 | awk "{print $3}" | sed "s/G//") && '
+            'echo DISK_AVAIL:$(df -BG / | tail -1 | awk "{print $4}" | sed "s/G//") && '
+            'echo CPU_USAGE:$(top -bn2 | grep "Cpu(s)" | tail -1 | awk "{print 100 - $8}")'
+        )
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", vm_name,
+            "--command", combined_command,
+            "--zone", zone,
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15)
         
         vm_resources = {'vm_name': vm_name, 'zone': zone}
         
-        for metric, command in commands.items():
-            result = subprocess.run([
-                "gcloud", "compute", "ssh", vm_name,
-                "--command", command,
-                "--zone", zone,
-                "--quiet"
-            ], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # Parse the output
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    if key == 'CPU_COUNT':
+                        vm_resources['cpu_count'] = value
+                    elif key == 'CPU_USAGE':
+                        vm_resources['cpu_usage'] = value
+                    elif key == 'MEM_TOTAL':
+                        vm_resources['memory_total'] = value
+                    elif key == 'MEM_USED':
+                        vm_resources['memory_used'] = value
+                    elif key == 'MEM_AVAIL':
+                        vm_resources['memory_available'] = value
+                    elif key == 'DISK_TOTAL':
+                        vm_resources['disk_total'] = value
+                    elif key == 'DISK_USED':
+                        vm_resources['disk_used'] = value
+                    elif key == 'DISK_AVAIL':
+                        vm_resources['disk_available'] = value
             
-            if result.returncode == 0:
-                vm_resources[metric] = result.stdout.strip()
-            else:
-                vm_resources[metric] = 'N/A'
-        
-        return vm_resources
+            log_command(f"gcloud compute ssh {vm_name}", "✅ Success", f"Retrieved all metrics from {vm_name}")
+            return vm_resources
+        else:
+            error_msg = result.stderr[:200] if result.stderr else "Unknown error"
+            log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Error: {error_msg}")
+            return {'vm_name': vm_name, 'zone': zone, 'error': error_msg}
+            
+    except subprocess.TimeoutExpired:
+        log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", "Timeout after 15 seconds")
+        return {'vm_name': vm_name, 'zone': zone, 'error': 'Timeout after 15 seconds'}
     except Exception as e:
+        log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Exception: {str(e)}")
         return {'vm_name': vm_name, 'zone': zone, 'error': str(e)}
 
 def main():
@@ -344,6 +546,61 @@ def main():
     [data-testid="stDataFrame"] tbody tr:nth-child(odd) {
         background-color: #f9f9f9 !important;
     }
+    
+    /* Live status indicator - pulsing green dot */
+    .live-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        background-color: #00ff00;
+        border-radius: 50%;
+        margin-right: 10px;
+        animation: pulse 2s infinite;
+        box-shadow: 0 0 8px #00ff00, 0 0 12px #00ff00;
+        border: 2px solid #00cc00;
+    }
+    
+    /* Stale status indicator - yellow static dot */
+    .stale-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        background-color: #ffaa00;
+        border-radius: 50%;
+        margin-right: 10px;
+        box-shadow: 0 0 5px #ffaa00;
+        border: 2px solid #cc8800;
+    }
+    
+    /* Error status indicator - red static dot */
+    .error-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        background-color: #ff0000;
+        border-radius: 50%;
+        margin-right: 10px;
+        box-shadow: 0 0 5px #ff0000;
+        border: 2px solid #cc0000;
+    }
+    
+    @keyframes pulse {
+        0% {
+            opacity: 1;
+            transform: scale(1);
+            box-shadow: 0 0 8px #00ff00, 0 0 12px #00ff00;
+        }
+        50% {
+            opacity: 0.6;
+            transform: scale(1.2);
+            box-shadow: 0 0 12px #00ff00, 0 0 20px #00ff00;
+        }
+        100% {
+            opacity: 1;
+            transform: scale(1);
+            box-shadow: 0 0 8px #00ff00, 0 0 12px #00ff00;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -508,36 +765,24 @@ def main():
         ]
         
         if vm_list:
-            # Comprehensive VM Resources Table - styled like the image
-            st.markdown("""
-                <div style="color: #3498db; font-size: 1.2rem; margin-bottom: 10px; display: flex; align-items: center;">
-                    <span style="margin-right: 8px;">📊</span>
-                    <span>VM Resources Overview</span>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Collect resource data for both VMs
+            # Collect resource data for both VMs FIRST
             vm_table_data = []
+            all_vm_fetch_success = True
             
             # Process each VM
             for vm_config in vm_list:
                 # Set VM info
-                k8s_status = "� VM Running"
+                k8s_status = "✓ VM Running"
                 k8s_role = "Master" if vm_config['name'] == 'k8s-master-001' else "Worker"
                 k8s_version = "v1.28.15"
                 internal_ip = "10.128.0.6" if vm_config['name'] == 'k8s-master-001' else "10.128.0.7"
                 
-                # Use static data with CPU usage for now to make it fast
-                vm_resources = {
-                    'cpu_count': '2',
-                    'cpu_usage': '15.2',
-                    'memory_total': '4',         # GB instead of MB
-                    'memory_used': '1', 
-                    'memory_available': '3',
-                    'disk_total': '10',
-                    'disk_used': '4',
-                    'disk_available': '6'
-                }
+                # Fetch REAL data from VM via SSH
+                fetch_time = datetime.now()
+                vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
+                
+                if 'error' in vm_resources:
+                    all_vm_fetch_success = False
                 
                 if 'error' not in vm_resources:
                     # Calculate percentages
@@ -561,6 +806,7 @@ def main():
                         'K8s Status': k8s_status,
                         'Role': k8s_role,
                         'Internal IP': internal_ip,
+                        'Data Age': format_time_ago(fetch_time),
                         'CPU Cores': vm_resources.get('cpu_count', 'N/A'),
                         'CPU Usage %': f"{cpu_usage:.1f}%" if cpu_usage > 0 else 'N/A',
                         'Memory Total (GB)': f"{mem_total}" if mem_total > 0 else 'N/A',
@@ -578,6 +824,7 @@ def main():
                         'K8s Status': k8s_status,
                         'Role': k8s_role,
                         'Internal IP': internal_ip,
+                        'Data Age': format_time_ago(fetch_time),
                         'CPU Cores': '❌ Error',
                         'CPU Usage %': '❌ Error',
                         'Memory Total (GB)': '❌ Error',
@@ -588,10 +835,27 @@ def main():
                         'Disk Available (GB)': '❌ Error'
                     })
             
+            # Update VM data timestamp and status
+            if all_vm_fetch_success:
+                st.session_state.vm_data_timestamp = datetime.now()
+                st.session_state.vm_data_status = 'success'
+            else:
+                st.session_state.vm_data_status = 'error'
+            
+            # NOW show the indicator with updated timestamp
+            vm_indicator = get_live_indicator_html('vm')
+            st.markdown(f"""
+                <div style="color: #3498db; font-size: 1.2rem; margin-bottom: 10px; display: flex; align-items: center;">
+                    <span style="margin-right: 8px;">📊</span>
+                    {vm_indicator}
+                    <span>VM Resources Overview</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
             # Display the comprehensive table with grouped columns
             if vm_table_data:
                 # Create dataframe with reorganized columns for grouping
-                base_cols = ['VM Name', 'Zone', 'K8s Status', 'Role', 'Internal IP']
+                base_cols = ['VM Name', 'Zone', 'K8s Status', 'Role', 'Internal IP', 'Data Age']
                 
                 # Create hierarchical multi-index dataframe for pretty display
                 df_resources = pd.DataFrame(vm_table_data)
@@ -655,6 +919,10 @@ def main():
                 st.warning("No VM data available")
         else:
             st.warning("No cluster nodes found. Make sure kubectl is configured.")
+        
+        # Display command logs
+        st.markdown("---")
+        display_command_logs("vm_status")
     
     # TAB 3: Pod Monitor
     with tab3:
@@ -672,7 +940,13 @@ def main():
         
         if pods_data:
             # Pod statistics
-            st.subheader("Pod Overview")
+            pod_indicator = get_live_indicator_html('pod')
+            st.markdown(f"""
+                <div style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center;">
+                    {pod_indicator}
+                    <span>Pod Overview</span>
+                </div>
+            """, unsafe_allow_html=True)
             col1, col2, col3, col4 = st.columns(4)
             
             total_pods = len(pods_data)
@@ -710,7 +984,8 @@ def main():
                         'Status': f"{status_icon} {pod['status']}",
                         'Node': pod['node'],
                         'Ready': pod['ready'],
-                        'Restarts': pod['restarts']
+                        'Restarts': pod['restarts'],
+                        'Data Age': format_time_ago(pod['fetch_timestamp'])
                     })
                 
                 df_pods = pd.DataFrame(pods_df_data)
@@ -756,6 +1031,10 @@ def main():
                         st.error("Failed to list pods")
                 except:
                     st.error("kubectl command failed")
+        
+        # Display command logs
+        st.markdown("---")
+        display_command_logs("pod_monitor")
     
     # Footer
     st.markdown("---")
