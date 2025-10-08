@@ -22,6 +22,46 @@ from core.system import check_requirements, check_requirements_cloud
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
 LOG_FILE.parent.mkdir(exist_ok=True)
 
+# Auto-refresh interval (in seconds)
+DATA_REFRESH_INTERVAL = 30
+MIB_PER_GIB = 1024
+
+
+def parse_int(value):
+    """Safely parse integers from string values."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def parse_float(value):
+    """Safely parse floats from string values."""
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def format_gib(value_mib):
+    """Convert MiB value to GiB string with one decimal place."""
+    if value_mib is None:
+        return 'N/A'
+    gib = value_mib / MIB_PER_GIB
+    if abs(gib) < 0.05:
+        gib = 0.0
+    return f"{gib:.1f}"
+
+
+def format_percent(value):
+    """Format a float percentage with one decimal place."""
+    if value is None:
+        return 'N/A'
+    clamped = max(0.0, min(100.0, value))
+    if clamped < 0.05:
+        clamped = 0.0
+    return f"{clamped:.1f}%"
+
 def load_logs_from_file():
     """Load logs from persistent file."""
     if LOG_FILE.exists():
@@ -62,6 +102,22 @@ if 'pod_data_timestamp' not in st.session_state:
     st.session_state.pod_data_timestamp = None
 if 'pod_data_status' not in st.session_state:
     st.session_state.pod_data_status = 'unknown'
+
+# Initialize auto-refresh/cache state
+if 'auto_refresh_enabled' not in st.session_state:
+    st.session_state.auto_refresh_enabled = True
+if 'last_data_refresh_time' not in st.session_state:
+    st.session_state.last_data_refresh_time = 0.0
+if 'force_refresh' not in st.session_state:
+    st.session_state.force_refresh = True
+if 'vm_table_cache' not in st.session_state:
+    st.session_state.vm_table_cache = []
+if 'vm_fetch_success' not in st.session_state:
+    st.session_state.vm_fetch_success = False
+if 'pods_cache' not in st.session_state:
+    st.session_state.pods_cache = []
+if 'pods_fetch_success' not in st.session_state:
+    st.session_state.pods_fetch_success = False
 
 def log_command(command, status="Running", details=""):
     """Log a command execution with timestamp."""
@@ -307,14 +363,19 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
         
         # Simple, working command - tested manually
         combined_command = (
-            'echo CPU_COUNT:$(nproc) && '
-            'echo MEM_TOTAL:$(free -g | awk "NR==2{print $2}") && '
-            'echo MEM_USED:$(free -g | awk "NR==2{print $3}") && '
-            'echo MEM_AVAIL:$(free -g | awk "NR==2{print $7}") && '
-            'echo DISK_TOTAL:$(df -BG / | tail -1 | awk "{print $2}" | sed "s/G//") && '
-            'echo DISK_USED:$(df -BG / | tail -1 | awk "{print $3}" | sed "s/G//") && '
-            'echo DISK_AVAIL:$(df -BG / | tail -1 | awk "{print $4}" | sed "s/G//") && '
-            'echo CPU_USAGE:$(top -bn2 | grep "Cpu(s)" | tail -1 | awk "{print 100 - $8}")'
+            "CPU_COUNT=$(nproc); "
+            "read MEM_TOTAL MEM_USED MEM_FREE MEM_AVAIL <<< $(free -m | awk 'NR==2 {print $2, $3, $4, $7}'); "
+            "read DISK_TOTAL DISK_USED DISK_AVAIL <<< $(df -BM / | tail -1 | awk '{print int($2), int($3), int($4)}'); "
+            "CPU_IDLE=$(top -bn1 | awk '/Cpu\\(s\\)/ {print $8}' | sed 's/[^0-9.]//g'); "
+            "echo CPU_COUNT:${CPU_COUNT}; "
+            "echo MEM_TOTAL_MIB:${MEM_TOTAL}; "
+            "echo MEM_USED_MIB:${MEM_USED}; "
+            "echo MEM_FREE_MIB:${MEM_FREE}; "
+            "echo MEM_AVAIL_MIB:${MEM_AVAIL}; "
+            "echo DISK_TOTAL_MIB:${DISK_TOTAL}; "
+            "echo DISK_USED_MIB:${DISK_USED}; "
+            "echo DISK_AVAIL_MIB:${DISK_AVAIL}; "
+            "echo CPU_IDLE_PERCENT:${CPU_IDLE}"
         )
         
         result = subprocess.run([
@@ -334,23 +395,7 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
                     key, value = line.split(':', 1)
                     key = key.strip()
                     value = value.strip()
-                    
-                    if key == 'CPU_COUNT':
-                        vm_resources['cpu_count'] = value
-                    elif key == 'CPU_USAGE':
-                        vm_resources['cpu_usage'] = value
-                    elif key == 'MEM_TOTAL':
-                        vm_resources['memory_total'] = value
-                    elif key == 'MEM_USED':
-                        vm_resources['memory_used'] = value
-                    elif key == 'MEM_AVAIL':
-                        vm_resources['memory_available'] = value
-                    elif key == 'DISK_TOTAL':
-                        vm_resources['disk_total'] = value
-                    elif key == 'DISK_USED':
-                        vm_resources['disk_used'] = value
-                    elif key == 'DISK_AVAIL':
-                        vm_resources['disk_available'] = value
+                    vm_resources[key] = value
             
             log_command(f"gcloud compute ssh {vm_name}", "✅ Success", f"Retrieved all metrics from {vm_name}")
             return vm_resources
@@ -372,6 +417,122 @@ def main():
         page_icon="🎛️",
         layout="wide"
     )
+
+    current_time = time.time()
+    last_refresh = st.session_state.last_data_refresh_time or 0.0
+    should_refresh = False
+    
+    if st.session_state.force_refresh or last_refresh == 0.0:
+        should_refresh = True
+    elif st.session_state.auto_refresh_enabled and (current_time - last_refresh >= DATA_REFRESH_INTERVAL):
+        should_refresh = True
+    
+    # Define cluster VM configuration
+    vm_list = [
+        {"name": "k8s-master-001", "zone": "us-central1-a", "role": "Master", "internal_ip": "10.128.0.6", "external_ip": "34.69.84.204"},
+        {"name": "k8s-worker-01", "zone": "us-central1-a", "role": "Worker", "internal_ip": "10.128.0.7", "external_ip": "34.133.61.216"}
+    ]
+    
+    if should_refresh:
+        refresh_timestamp = datetime.now()
+        vm_table_data = []
+        all_vm_fetch_success = True
+        
+        for vm_config in vm_list:
+            vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
+            row_base = {
+                'VM Name': vm_config['name'],
+                'Zone': vm_config['zone'],
+                'K8s Status': "✓ VM Running",
+                'Role': vm_config['role'],
+                'Internal IP': vm_config['internal_ip'],
+                'External IP': vm_config['external_ip'],
+                'data_timestamp': refresh_timestamp
+            }
+
+            if 'error' not in vm_resources:
+                cpu_count_val = parse_int(vm_resources.get('CPU_COUNT'))
+                cpu_idle_percent = parse_float(vm_resources.get('CPU_IDLE_PERCENT'))
+                cpu_usage_val = None
+                if cpu_idle_percent is not None:
+                    cpu_usage_val = 100.0 - cpu_idle_percent
+
+                mem_total_mib = parse_int(vm_resources.get('MEM_TOTAL_MIB'))
+                mem_used_mib = parse_int(vm_resources.get('MEM_USED_MIB'))
+                mem_free_mib = parse_int(vm_resources.get('MEM_FREE_MIB'))
+                mem_avail_mib = parse_int(vm_resources.get('MEM_AVAIL_MIB'))
+
+                disk_total_mib = parse_int(vm_resources.get('DISK_TOTAL_MIB'))
+                disk_used_mib = parse_int(vm_resources.get('DISK_USED_MIB'))
+                disk_avail_mib = parse_int(vm_resources.get('DISK_AVAIL_MIB'))
+
+                mem_percent = None
+                if mem_total_mib is not None and mem_used_mib is not None:
+                    if mem_total_mib > 0:
+                        mem_percent = (mem_used_mib / mem_total_mib) * 100
+                    else:
+                        mem_percent = 0.0
+
+                disk_percent = None
+                if disk_total_mib is not None and disk_used_mib is not None:
+                    if disk_total_mib > 0:
+                        disk_percent = (disk_used_mib / disk_total_mib) * 100
+                    else:
+                        disk_percent = 0.0
+
+                row = {
+                    **row_base,
+                    'CPU Cores': cpu_count_val if cpu_count_val is not None else 'N/A',
+                    'CPU Usage %': format_percent(cpu_usage_val),
+                    'Memory Total (GiB)': format_gib(mem_total_mib),
+                    'Memory Used (GiB)': format_gib(mem_used_mib),
+                    'Memory Used %': format_percent(mem_percent),
+                    'Memory Free (GiB)': format_gib(mem_free_mib),
+                    'Memory Available (GiB)': format_gib(mem_avail_mib),
+                    'Disk Total (GiB)': format_gib(disk_total_mib),
+                    'Disk Used (GiB)': format_gib(disk_used_mib),
+                    'Disk Used %': format_percent(disk_percent),
+                    'Disk Available (GiB)': format_gib(disk_avail_mib)
+                }
+            else:
+                all_vm_fetch_success = False
+                row = {
+                    **row_base,
+                    'K8s Status': '⚠️ Data Fetch Error',
+                    'CPU Cores': '❌ Error',
+                    'CPU Usage %': '❌ Error',
+                    'Memory Total (GiB)': '❌ Error',
+                    'Memory Used (GiB)': '❌ Error',
+                    'Memory Used %': '❌ Error',
+                    'Memory Free (GiB)': '❌ Error',
+                    'Memory Available (GiB)': '❌ Error',
+                    'Disk Total (GiB)': '❌ Error',
+                    'Disk Used (GiB)': '❌ Error',
+                    'Disk Used %': '❌ Error',
+                    'Disk Available (GiB)': '❌ Error'
+                }
+
+            vm_table_data.append(row)
+
+        st.session_state.vm_table_cache = vm_table_data
+        st.session_state.vm_fetch_success = all_vm_fetch_success
+        if all_vm_fetch_success:
+            st.session_state.vm_data_timestamp = refresh_timestamp
+            st.session_state.vm_data_status = 'success'
+        else:
+            st.session_state.vm_data_status = 'error'
+
+        pods_data = get_pods_info()
+        st.session_state.pods_cache = pods_data
+        st.session_state.pods_fetch_success = st.session_state.pod_data_status == 'success'
+
+        st.session_state.last_data_refresh_time = time.time()
+        current_time = st.session_state.last_data_refresh_time
+        st.session_state.force_refresh = False
+    else:
+        vm_table_data = st.session_state.vm_table_cache
+        all_vm_fetch_success = st.session_state.vm_fetch_success
+        pods_data = st.session_state.pods_cache
     
     # Set theme to dark mode to match the image
     st.markdown("""
@@ -604,8 +765,36 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # Main title with custom styling
-    st.markdown('<div class="main-header">🎛️ Kubernetes Management Dashboard</div>', unsafe_allow_html=True)
+    # Main title with custom styling and auto-refresh controls
+    col1, col2, col3 = st.columns([6, 3, 1])
+    with col1:
+        st.markdown('<div class="main-header">🎛️ Kubernetes Management Dashboard</div>', unsafe_allow_html=True)
+    with col2:
+        # Calculate time until next refresh
+        current_tick_time = time.time()
+        if st.session_state.auto_refresh_enabled:
+            last_refresh = st.session_state.last_data_refresh_time or 0.0
+            time_since_refresh = current_tick_time - last_refresh
+            time_remaining = max(0, int(DATA_REFRESH_INTERVAL - time_since_refresh))
+            st.markdown(
+                f'<div style="color: #00ff00; font-size: 0.9rem; margin-top: 20px;">⏱️ Next refresh in: {time_remaining}s</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown('<div style="color: #888; font-size: 0.9rem; margin-top: 20px;">⏸️ Auto-refresh disabled</div>', unsafe_allow_html=True)
+    with col3:
+        # Toggle auto-refresh
+        auto_refresh_toggle = st.toggle("Auto-refresh", value=st.session_state.auto_refresh_enabled, key="auto_refresh_toggle")
+        if auto_refresh_toggle != st.session_state.auto_refresh_enabled:
+            st.session_state.auto_refresh_enabled = auto_refresh_toggle
+            if auto_refresh_toggle:
+                st.session_state.force_refresh = True
+            else:
+                # When disabling, clear any pending force refresh to avoid immediate rerun
+                st.session_state.force_refresh = False
+                if 'dashboard_autorefresh' in st.session_state:
+                    del st.session_state['dashboard_autorefresh']
+            st.rerun()
     
     # Create tabs for different functionalities
     tab1, tab2, tab3 = st.tabs(["📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"])
@@ -756,93 +945,11 @@ def main():
             st.write("Monitor your GCP VMs and their resources")
         with col2:
             if st.button("🔄 Refresh", key="vm_refresh", use_container_width=True):
+                st.session_state.force_refresh = True
                 st.rerun()
-        
-        # Define our VMs directly (since we know them)
-        vm_list = [
-            {"name": "k8s-master-001", "zone": "us-central1-a", "ip": "34.135.232.124"},
-            {"name": "k8s-worker-01", "zone": "us-central1-a", "ip": "34.133.61.216"}
-        ]
-        
-        if vm_list:
-            # Collect resource data for both VMs FIRST
-            vm_table_data = []
-            all_vm_fetch_success = True
-            
-            # Process each VM
-            for vm_config in vm_list:
-                # Set VM info
-                k8s_status = "✓ VM Running"
-                k8s_role = "Master" if vm_config['name'] == 'k8s-master-001' else "Worker"
-                k8s_version = "v1.28.15"
-                internal_ip = "10.128.0.6" if vm_config['name'] == 'k8s-master-001' else "10.128.0.7"
-                
-                # Fetch REAL data from VM via SSH
-                fetch_time = datetime.now()
-                vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
-                
-                if 'error' in vm_resources:
-                    all_vm_fetch_success = False
-                
-                if 'error' not in vm_resources:
-                    # Calculate percentages
-                    try:
-                        cpu_usage = float(vm_resources.get('cpu_usage', 0))
-                        mem_total = int(vm_resources.get('memory_total', 0))
-                        mem_used = int(vm_resources.get('memory_used', 0))
-                        mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0
-                        
-                        disk_total = int(vm_resources.get('disk_total', 0))
-                        disk_used = int(vm_resources.get('disk_used', 0))
-                        disk_percent = (disk_used / disk_total * 100) if disk_total > 0 else 0
-                        
-                    except (ValueError, TypeError):
-                        cpu_usage = mem_percent = disk_percent = 0
-                        mem_total = mem_used = disk_total = disk_used = 0
-                    
-                    vm_table_data.append({
-                        'VM Name': vm_config['name'],
-                        'Zone': vm_config['zone'],
-                        'K8s Status': k8s_status,
-                        'Role': k8s_role,
-                        'Internal IP': internal_ip,
-                        'Data Age': format_time_ago(fetch_time),
-                        'CPU Cores': vm_resources.get('cpu_count', 'N/A'),
-                        'CPU Usage %': f"{cpu_usage:.1f}%" if cpu_usage > 0 else 'N/A',
-                        'Memory Total (GB)': f"{mem_total}" if mem_total > 0 else 'N/A',
-                        'Memory Used %': f"{mem_percent:.1f}%" if mem_used > 0 else 'N/A',
-                        'Memory Available (GB)': f"{vm_resources.get('memory_available', 'N/A')}",
-                        'Disk Total (GB)': f"{disk_total}" if disk_total > 0 else 'N/A',
-                        'Disk Used %': f"{disk_percent:.1f}%" if disk_used > 0 else 'N/A',
-                        'Disk Available (GB)': f"{vm_resources.get('disk_available', 'N/A')}"
-                    })
-                else:
-                    # VM with error
-                    vm_table_data.append({
-                        'VM Name': vm_config['name'],
-                        'Zone': vm_config['zone'],
-                        'K8s Status': k8s_status,
-                        'Role': k8s_role,
-                        'Internal IP': internal_ip,
-                        'Data Age': format_time_ago(fetch_time),
-                        'CPU Cores': '❌ Error',
-                        'CPU Usage %': '❌ Error',
-                        'Memory Total (GB)': '❌ Error',
-                        'Memory Used %': '❌ Error',
-                        'Memory Available (GB)': '❌ Error',
-                        'Disk Total (GB)': '❌ Error',
-                        'Disk Used %': '❌ Error',
-                        'Disk Available (GB)': '❌ Error'
-                    })
-            
-            # Update VM data timestamp and status
-            if all_vm_fetch_success:
-                st.session_state.vm_data_timestamp = datetime.now()
-                st.session_state.vm_data_status = 'success'
-            else:
-                st.session_state.vm_data_status = 'error'
-            
-            # NOW show the indicator with updated timestamp
+
+        if vm_table_data:
+            # Show indicator using cached status
             vm_indicator = get_live_indicator_html('vm')
             st.markdown(f"""
                 <div style="color: #3498db; font-size: 1.2rem; margin-bottom: 10px; display: flex; align-items: center;">
@@ -855,10 +962,16 @@ def main():
             # Display the comprehensive table with grouped columns
             if vm_table_data:
                 # Create dataframe with reorganized columns for grouping
-                base_cols = ['VM Name', 'Zone', 'K8s Status', 'Role', 'Internal IP', 'Data Age']
+                display_rows = []
+                for row in vm_table_data:
+                    display_row = row.copy()
+                    display_row['Data Age'] = format_time_ago(row['data_timestamp'])
+                    display_row.pop('data_timestamp', None)
+                    display_rows.append(display_row)
+                base_cols = ['VM Name', 'Zone', 'K8s Status', 'Role', 'Internal IP', 'External IP', 'Data Age']
                 
                 # Create hierarchical multi-index dataframe for pretty display
-                df_resources = pd.DataFrame(vm_table_data)
+                df_resources = pd.DataFrame(display_rows)
                 
                 # Rename columns with tuples for hierarchical display
                 renamed_columns = {}
@@ -918,7 +1031,7 @@ def main():
             else:
                 st.warning("No VM data available")
         else:
-            st.warning("No cluster nodes found. Make sure kubectl is configured.")
+            st.warning("No VM data available. Use refresh to fetch the latest metrics.")
         
         # Display command logs
         st.markdown("---")
@@ -933,14 +1046,11 @@ def main():
             st.write("Monitor pods across your Kubernetes cluster")
         with col2:
             if st.button("🔄 Refresh", key="pod_refresh"):
+                st.session_state.force_refresh = True
                 st.rerun()
         
-        # Get pods info
-        pods_data = get_pods_info()
-        
+        pod_indicator = get_live_indicator_html('pod')
         if pods_data:
-            # Pod statistics
-            pod_indicator = get_live_indicator_html('pod')
             st.markdown(f"""
                 <div style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center;">
                     {pod_indicator}
@@ -963,16 +1073,13 @@ def main():
             with col4:
                 st.metric("Failed", failed_pods)
             
-            # Namespace filter
             namespaces = sorted(list(set(pod['namespace'] for pod in pods_data)))
             selected_namespace = st.selectbox("Filter by namespace:", ["All"] + namespaces)
             
-            # Filter pods
             filtered_pods = pods_data
             if selected_namespace != "All":
                 filtered_pods = [pod for pod in pods_data if pod['namespace'] == selected_namespace]
             
-            # Pods table
             st.subheader("Pod Details")
             if filtered_pods:
                 pods_df_data = []
@@ -993,6 +1100,12 @@ def main():
             else:
                 st.info("No pods found in selected namespace.")
         else:
+            st.markdown(f"""
+                <div style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center;">
+                    {pod_indicator}
+                    <span>Pod Overview</span>
+                </div>
+            """, unsafe_allow_html=True)
             st.warning("No pods found. Make sure kubectl is configured and cluster is running.")
         
         # Quick kubectl commands
@@ -1039,6 +1152,10 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown(f"*Dashboard last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+
+    if st.session_state.auto_refresh_enabled:
+        time.sleep(1)
+        st.rerun()
 
 if __name__ == "__main__":
     main()
