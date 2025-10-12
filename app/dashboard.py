@@ -13,10 +13,20 @@ from pathlib import Path
 # Load environment variables
 load_dotenv()
 
+# Import Google Gemini AI
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 # Add the parent directory to the path to import from core
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 from core.system import check_requirements, check_requirements_cloud
+from utils.gen_api import generate_content
 
 # Log file path
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
@@ -797,7 +807,7 @@ def main():
             st.rerun()
     
     # Create tabs for different functionalities
-    tab1, tab2, tab3 = st.tabs(["📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor", "🤖 K8s AI Assistant"])
     
     # TAB 1: Host Validator
     with tab1:
@@ -1148,6 +1158,105 @@ def main():
         # Display command logs
         st.markdown("---")
         display_command_logs("pod_monitor")
+    
+    # TAB 4: K8s AI Assistant
+    with tab4:
+        st.markdown('<div class="section-header">🤖 K8s AI Assistant</div>', unsafe_allow_html=True)
+        st.write("Chat with AI to get help with Kubernetes, troubleshooting, and cluster management.")
+        
+        # Check if API key is configured
+        api_key = os.getenv('GOOGLE_API_KEY')
+        
+        if not GEMINI_AVAILABLE:
+            st.error("❌ Google Generative AI library not installed. Install it with: `pip install google-generativeai`")
+        elif not api_key:
+            st.warning("⚠️ Google API Key not configured")
+            st.info("""
+            **To enable the AI Assistant:**
+            1. Get a free API key from: https://makersuite.google.com/app/apikey
+            2. Add it to your `.env` file: `GOOGLE_API_KEY=your-api-key-here`
+            3. Restart the dashboard
+            
+            The Gemini API has a generous free tier with no credit card required!
+            """)
+        else:
+            # Initialize Gemini
+            try:
+                genai.configure(api_key=api_key)
+                
+                # Initialize chat session in session state
+                if 'chat_history' not in st.session_state:
+                    st.session_state.chat_history = []
+                
+                if 'gemini_model' not in st.session_state:
+                    st.session_state.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                    st.session_state.chat = st.session_state.gemini_model.start_chat(history=[])
+                
+                # Display chat history
+                if st.session_state.chat_history:
+                    for message in st.session_state.chat_history:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["content"])
+                else:
+                    st.info("👋 Hi! I'm your K8s AI Assistant. Ask me anything about:\n- Kubernetes concepts\n- Cluster troubleshooting\n- Pod management\n- Resource optimization\n- Best practices")
+                
+                # Chat input
+                if prompt := st.chat_input("Ask me anything about Kubernetes..."):
+                    # Add user message to chat history
+                    st.session_state.chat_history.append({"role": "user", "content": prompt})
+                    
+                    # Display user message
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
+                    
+                    # Get AI response
+                    with st.chat_message("assistant"):
+                        with st.spinner("Thinking..."):
+                            try:
+                                # Send message to Gemini via REST helper
+                                resp_json = generate_content(prompt, api_key=api_key, max_tokens=512, temperature=0.2)
+                                # parse first candidate text
+                                candidate = resp_json.get('candidates', [{}])[0]
+                                ai_parts = candidate.get('content', {}).get('parts', [])
+                                ai_response = ''
+                                if ai_parts:
+                                    ai_response = ''.join([p.get('text', '') for p in ai_parts])
+                                else:
+                                    ai_response = json.dumps(resp_json)
+
+                                # Display response
+                                st.markdown(ai_response)
+
+                                # Add to history
+                                st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+
+                            except Exception as e:
+                                error_msg = f"Error getting AI response: {str(e)}"
+                                st.error(error_msg)
+                                st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                
+                # Clear chat button
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    if st.button("🗑️ Clear Chat"):
+                        st.session_state.chat_history = []
+                        st.session_state.chat = st.session_state.gemini_model.start_chat(history=[])
+                        st.rerun()
+                
+                with col2:
+                    if st.button("ℹ️ About"):
+                        st.info("""
+                        **K8s AI Assistant**
+                        - Powered by Google Gemini Pro
+                        - Context-aware conversations
+                        - Kubernetes expertise
+                        - Real-time help and guidance
+                        """)
+            
+            except Exception as e:
+                st.error(f"Failed to initialize AI: {str(e)}")
+                st.info("Check your API key configuration in the `.env` file.")
     
     # Footer
     st.markdown("---")
