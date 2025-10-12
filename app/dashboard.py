@@ -1182,77 +1182,66 @@ def main():
         else:
             # Initialize Gemini
             try:
-                genai.configure(api_key=api_key)
-                
                 # Initialize chat session in session state
                 if 'chat_history' not in st.session_state:
                     st.session_state.chat_history = []
                 
-                if 'gemini_model' not in st.session_state:
-                    st.session_state.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-                    st.session_state.chat = st.session_state.gemini_model.start_chat(history=[])
-                
-                # Display chat history
-                if st.session_state.chat_history:
-                    for message in st.session_state.chat_history:
-                        with st.chat_message(message["role"]):
-                            st.markdown(message["content"])
-                else:
-                    st.info("👋 Hi! I'm your K8s AI Assistant. Ask me anything about:\n- Kubernetes concepts\n- Cluster troubleshooting\n- Pod management\n- Resource optimization\n- Best practices")
-                
-                # Chat input
-                if prompt := st.chat_input("Ask me anything about Kubernetes..."):
-                    # Add user message to chat history
-                    st.session_state.chat_history.append({"role": "user", "content": prompt})
-                    
-                    # Display user message
-                    with st.chat_message("user"):
-                        st.markdown(prompt)
-                    
-                    # Get AI response
-                    with st.chat_message("assistant"):
-                        with st.spinner("Thinking..."):
-                            try:
-                                # Send message to Gemini via REST helper
-                                resp_json = generate_content(prompt, api_key=api_key, max_tokens=512, temperature=0.2)
-                                # parse first candidate text
-                                candidate = resp_json.get('candidates', [{}])[0]
-                                ai_parts = candidate.get('content', {}).get('parts', [])
-                                ai_response = ''
-                                if ai_parts:
-                                    ai_response = ''.join([p.get('text', '') for p in ai_parts])
-                                else:
-                                    ai_response = json.dumps(resp_json)
-
-                                # Display response
-                                st.markdown(ai_response)
-
-                                # Add to history
-                                st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-
-                            except Exception as e:
-                                error_msg = f"Error getting AI response: {str(e)}"
-                                st.error(error_msg)
-                                st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
-                
-                # Clear chat button
-                st.markdown("---")
-                col1, col2, col3 = st.columns([1, 1, 4])
-                with col1:
-                    if st.button("🗑️ Clear Chat"):
+                # Sidebar controls
+                with st.sidebar:
+                    st.markdown("### 💬 Chat Controls")
+                    if st.button("🗑️ Clear Chat", use_container_width=True):
                         st.session_state.chat_history = []
-                        st.session_state.chat = st.session_state.gemini_model.start_chat(history=[])
                         st.rerun()
-                
-                with col2:
-                    if st.button("ℹ️ About"):
+                    
+                    if st.button("ℹ️ About", use_container_width=True):
                         st.info("""
                         **K8s AI Assistant**
-                        - Powered by Google Gemini Pro
+                        - Powered by Google Gemini 2.0 Flash
                         - Context-aware conversations
                         - Kubernetes expertise
                         - Real-time help and guidance
                         """)
+                
+                # Chat messages container with scrollbar
+                chat_container = st.container(height=500)
+                with chat_container:
+                    # Display welcome message if no chat history
+                    if not st.session_state.chat_history:
+                        with st.chat_message("assistant"):
+                            st.markdown("👋 Hi! I'm your K8s AI Assistant. Ask me anything about:\n- Kubernetes concepts\n- Cluster troubleshooting\n- Pod management\n- Resource optimization\n- Best practices")
+                    
+                    # Display all chat history
+                    for message in st.session_state.chat_history:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["content"])
+                
+                # Chat input fixed at the bottom
+                if prompt := st.chat_input("Ask me anything about Kubernetes..."):
+                    # Add user message to chat history
+                    st.session_state.chat_history.append({"role": "user", "content": prompt})
+                    
+                    # Get AI response
+                    try:
+                        # Send message to Gemini via REST helper
+                        resp_json = generate_content(prompt, api_key=api_key, max_tokens=512, temperature=0.2)
+                        # parse first candidate text
+                        candidate = resp_json.get('candidates', [{}])[0]
+                        ai_parts = candidate.get('content', {}).get('parts', [])
+                        ai_response = ''
+                        if ai_parts:
+                            ai_response = ''.join([p.get('text', '') for p in ai_parts])
+                        else:
+                            ai_response = json.dumps(resp_json)
+
+                        # Add AI response to history
+                        st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+
+                    except Exception as e:
+                        error_msg = f"Error getting AI response: {str(e)}"
+                        st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                    
+                    # Rerun to display new messages
+                    st.rerun()
             
             except Exception as e:
                 st.error(f"Failed to initialize AI: {str(e)}")
