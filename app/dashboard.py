@@ -32,8 +32,7 @@ from utils.gen_api import generate_content
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
 LOG_FILE.parent.mkdir(exist_ok=True)
 
-# Auto-refresh interval (in seconds)
-DATA_REFRESH_INTERVAL = 30
+# Constants
 MIB_PER_GIB = 1024
 
 
@@ -113,13 +112,11 @@ if 'pod_data_timestamp' not in st.session_state:
 if 'pod_data_status' not in st.session_state:
     st.session_state.pod_data_status = 'unknown'
 
-# Initialize auto-refresh/cache state
-if 'auto_refresh_enabled' not in st.session_state:
-    st.session_state.auto_refresh_enabled = True
+# Initialize manual refresh state
+if 'manual_refresh' not in st.session_state:
+    st.session_state.manual_refresh = True
 if 'last_data_refresh_time' not in st.session_state:
     st.session_state.last_data_refresh_time = 0.0
-if 'force_refresh' not in st.session_state:
-    st.session_state.force_refresh = True
 if 'vm_table_cache' not in st.session_state:
     st.session_state.vm_table_cache = []
 if 'vm_fetch_success' not in st.session_state:
@@ -423,8 +420,8 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
 
 def main():
     st.set_page_config(
-        page_title="Kubernetes Management Dashboard",
-        page_icon="🎛️",
+        page_title="AI Powered K8s Virtual Assistant",
+        page_icon="🤖",
         layout="wide"
     )
 
@@ -432,9 +429,7 @@ def main():
     last_refresh = st.session_state.last_data_refresh_time or 0.0
     should_refresh = False
     
-    if st.session_state.force_refresh or last_refresh == 0.0:
-        should_refresh = True
-    elif st.session_state.auto_refresh_enabled and (current_time - last_refresh >= DATA_REFRESH_INTERVAL):
+    if st.session_state.manual_refresh or last_refresh == 0.0:
         should_refresh = True
     
     # Define cluster VM configuration
@@ -538,7 +533,7 @@ def main():
 
         st.session_state.last_data_refresh_time = time.time()
         current_time = st.session_state.last_data_refresh_time
-        st.session_state.force_refresh = False
+        st.session_state.manual_refresh = False
     else:
         vm_table_data = st.session_state.vm_table_cache
         all_vm_fetch_success = st.session_state.vm_fetch_success
@@ -557,15 +552,99 @@ def main():
     # Custom CSS for better appearance
     st.markdown("""
     <style>
+    /* Reduce overall page padding */
+    .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0rem !important;
+        scroll-behavior: auto !important;
+    }
+    
+    /* Prevent automatic scrolling on rerun */
+    .main .block-container {
+        overflow: visible !important;
+        position: relative !important;
+    }
+    
     .main-header {
         font-size: 2.5rem;
         color: #0066cc;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
+        margin-top: 0px;
+        padding-top: 5px;
+        padding-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        position: -webkit-sticky;
+        position: sticky;
+        top: 0;
+        background-color: #0e1117;
+        z-index: 999;
     }
+    
+    /* Make the emoji larger */
+    .main-header::first-letter {
+        font-size: 3.5rem;
+    }
+    
+    /* Style navigation radio buttons */
+    div[role="radiogroup"] {
+        gap: 15px !important;
+        margin-top: 10px !important;
+        margin-bottom: 5px !important;
+    }
+    
+    div[role="radiogroup"] label {
+        font-size: 0.95rem !important;
+        padding: 10px 20px !important;
+        background-color: #2d3748 !important;
+        color: #e2e8f0 !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        border: 1px solid #4a5568 !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    div[role="radiogroup"] label:hover {
+        background-color: #3d4758 !important;
+        border-color: #0066cc !important;
+    }
+    
+    div[role="radiogroup"] label[data-checked="true"] {
+        background-color: #0066cc !important;
+        color: white !important;
+        border-color: #0066cc !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Align buttons with navigation tabs */
+    button[kind="primary"], button[kind="secondary"] {
+        margin-top: 10px !important;
+        padding: 10px 20px !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Hide radio button circles */
+    div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+        color: inherit !important;
+    }
+    
+    div[role="radiogroup"] input[type="radio"] {
+        display: none !important;
+    }
+    
+    /* Remove extra spacing after button container */
+    .element-container:has(button) + div[data-testid="stVerticalBlock"] {
+        margin-top: 0px !important;
+        padding-top: 0px !important;
+    }
+    
     .section-header {
         font-size: 1.8rem;
         color: #2e7d32;
-        padding-top: 10px;
+        padding-top: 0px;
+        margin-top: 0px;
+        margin-bottom: 10px;
     }
     .subsection-header {
         font-size: 1.3rem;
@@ -773,44 +852,53 @@ def main():
         }
     }
     </style>
+    
+    <script>
+    // Keep page at top when switching tabs
+    const targetNode = document.querySelector('.main');
+    if (targetNode) {
+        const config = { childList: true, subtree: true };
+        const callback = function(mutationsList, observer) {
+            // Force scroll to top
+            window.scrollTo({top: 0, behavior: 'instant'});
+            document.querySelector('.main').scrollTop = 0;
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
+    }
+    
+    // Also force on load
+    window.scrollTo({top: 0, behavior: 'instant'});
+    </script>
     """, unsafe_allow_html=True)
     
-    # Main title with custom styling and auto-refresh controls
-    col1, col2, col3 = st.columns([6, 3, 1])
-    with col1:
-        st.markdown('<div class="main-header">🎛️ Kubernetes Management Dashboard</div>', unsafe_allow_html=True)
-    with col2:
-        # Calculate time until next refresh
-        current_tick_time = time.time()
-        if st.session_state.auto_refresh_enabled:
-            last_refresh = st.session_state.last_data_refresh_time or 0.0
-            time_since_refresh = current_tick_time - last_refresh
-            time_remaining = max(0, int(DATA_REFRESH_INTERVAL - time_since_refresh))
-            st.markdown(
-                f'<div style="color: #00ff00; font-size: 0.9rem; margin-top: 20px;">⏱️ Next refresh in: {time_remaining}s</div>',
-                unsafe_allow_html=True
-            )
+    # Title at the top
+    st.markdown('<div class="main-header"><span style="font-size: 3.5rem;">🤖</span> AI Powered K8s Virtual Assistant</div>', unsafe_allow_html=True)
+    
+    # Navigation and buttons in same row - aligned
+    col_nav, col_spacer, col_button = st.columns([3, 0.5, 0.5])
+    
+    with col_nav:
+        page = st.radio(
+            "",
+            ["🤖 AI Assistant", "📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"],
+            index=0,
+            label_visibility="collapsed",
+            horizontal=True
+        )
+    
+    with col_button:
+        if page == "🤖 AI Assistant":
+            if st.button("🗑️ Clear Chat", key="clear_chat_button", use_container_width=True):
+                st.session_state.chat_history = []
+                st.rerun()
         else:
-            st.markdown('<div style="color: #888; font-size: 0.9rem; margin-top: 20px;">⏸️ Auto-refresh disabled</div>', unsafe_allow_html=True)
-    with col3:
-        # Toggle auto-refresh
-        auto_refresh_toggle = st.toggle("Auto-refresh", value=st.session_state.auto_refresh_enabled, key="auto_refresh_toggle")
-        if auto_refresh_toggle != st.session_state.auto_refresh_enabled:
-            st.session_state.auto_refresh_enabled = auto_refresh_toggle
-            if auto_refresh_toggle:
-                st.session_state.force_refresh = True
-            else:
-                # When disabling, clear any pending force refresh to avoid immediate rerun
-                st.session_state.force_refresh = False
-                if 'dashboard_autorefresh' in st.session_state:
-                    del st.session_state['dashboard_autorefresh']
-            st.rerun()
+            if st.button("🔄 Refresh", key="manual_refresh_button", use_container_width=True):
+                st.session_state.manual_refresh = True
+                st.rerun()
     
-    # Create tabs for different functionalities
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor", "🤖 K8s AI Assistant"])
-    
-    # TAB 1: Host Validator
-    with tab1:
+    # Show selected page in main area
+    if page == "📋 Host Validator":
         st.markdown('<div class="section-header">📋 Host Validation</div>', unsafe_allow_html=True)
         st.write("Check if a server meets the minimum requirements to join a Kubernetes cluster.")
         
@@ -946,17 +1034,10 @@ def main():
                     except Exception as e:
                         st.error(f"Validation failed: {str(e)}")
     
-    # TAB 2: VM Status
-    with tab2:
+    elif page == "🖥️ VM Status":
         st.markdown('<div class="section-header">🖥️ VM Status & Resources</div>', unsafe_allow_html=True)
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write("Monitor your GCP VMs and their resources")
-        with col2:
-            if st.button("🔄 Refresh", key="vm_refresh", use_container_width=True):
-                st.session_state.force_refresh = True
-                st.rerun()
+        st.write("Monitor your GCP VMs and their resources")
 
         if vm_table_data:
             # Show indicator using cached status
@@ -1047,17 +1128,10 @@ def main():
         st.markdown("---")
         display_command_logs("vm_status")
     
-    # TAB 3: Pod Monitor
-    with tab3:
+    elif page == "🚀 Pod Monitor":
         st.markdown('<div class="section-header">🚀 Pod Monitor</div>', unsafe_allow_html=True)
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write("Monitor pods across your Kubernetes cluster")
-        with col2:
-            if st.button("🔄 Refresh", key="pod_refresh"):
-                st.session_state.force_refresh = True
-                st.rerun()
+        st.write("Monitor pods across your Kubernetes cluster")
         
         pod_indicator = get_live_indicator_html('pod')
         if pods_data:
@@ -1159,11 +1233,7 @@ def main():
         st.markdown("---")
         display_command_logs("pod_monitor")
     
-    # TAB 4: K8s AI Assistant
-    with tab4:
-        st.markdown('<div class="section-header">🤖 K8s AI Assistant</div>', unsafe_allow_html=True)
-        st.write("Chat with AI to get help with Kubernetes, troubleshooting, and cluster management.")
-        
+    elif page == "🤖 AI Assistant":
         # Check if API key is configured
         api_key = os.getenv('GOOGLE_API_KEY')
         
@@ -1186,33 +1256,41 @@ def main():
                 if 'chat_history' not in st.session_state:
                     st.session_state.chat_history = []
                 
-                # Sidebar controls
-                with st.sidebar:
-                    st.markdown("### 💬 Chat Controls")
-                    if st.button("🗑️ Clear Chat", use_container_width=True):
-                        st.session_state.chat_history = []
-                        st.rerun()
+                # Add custom CSS to reduce all spacing around chat
+                st.markdown("""
+                <style>
+                    /* Reduce spacing before chat container */
+                    div[data-testid="stVerticalBlock"] > div:has(div.stChatFloatingInputContainer) {
+                        margin-top: 0px !important;
+                        padding-top: 0px !important;
+                    }
                     
-                    if st.button("ℹ️ About", use_container_width=True):
-                        st.info("""
-                        **K8s AI Assistant**
-                        - Powered by Google Gemini 2.0 Flash
-                        - Context-aware conversations
-                        - Kubernetes expertise
-                        - Real-time help and guidance
-                        """)
+                    /* Reduce spacing in chat container */
+                    div[data-testid="stVerticalBlock"] {
+                        gap: 0.5rem !important;
+                    }
+                    
+                    /* Remove extra padding from elements */
+                    .element-container {
+                        margin-bottom: 0px !important;
+                    }
+                </style>
+                """, unsafe_allow_html=True)
                 
-                # Chat messages container with scrollbar
+                # K8s logo URL
+                k8s_avatar = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.png"
+                
                 chat_container = st.container(height=500)
                 with chat_container:
                     # Display welcome message if no chat history
                     if not st.session_state.chat_history:
-                        with st.chat_message("assistant"):
-                            st.markdown("👋 Hi! I'm your K8s AI Assistant. Ask me anything about:\n- Kubernetes concepts\n- Cluster troubleshooting\n- Pod management\n- Resource optimization\n- Best practices")
+                        with st.chat_message("assistant", avatar=k8s_avatar):
+                            st.markdown("👋 **Hi! I'm your Kubernetes AI Assistant.**\n\nAsk me about:\n- Kubernetes concepts & architecture\n- Cluster troubleshooting & debugging\n- Pod & deployment management\n- Resource optimization & scaling\n- Best practices & security")
                     
                     # Display all chat history
                     for message in st.session_state.chat_history:
-                        with st.chat_message(message["role"]):
+                        avatar = k8s_avatar if message["role"] == "assistant" else None
+                        with st.chat_message(message["role"], avatar=avatar):
                             st.markdown(message["content"])
                 
                 # Chat input fixed at the bottom
@@ -1250,10 +1328,6 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown(f"*Dashboard last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-
-    if st.session_state.auto_refresh_enabled:
-        time.sleep(1)
-        st.rerun()
 
 if __name__ == "__main__":
     main()
