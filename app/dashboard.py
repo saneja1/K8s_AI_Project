@@ -28,8 +28,9 @@ if parent_dir not in sys.path:
 from core.system import check_requirements, check_requirements_cloud
 from utils.gen_api import generate_content
 
-# Log file path
+# Log file paths
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
+CHAT_HISTORY_FILE = Path(__file__).parent.parent / '.logs' / 'chat_history.pkl'
 LOG_FILE.parent.mkdir(exist_ok=True)
 
 # Constants
@@ -89,6 +90,25 @@ def save_logs_to_file(logs, started_time):
             pickle.dump({'logs': logs, 'started': started_time}, f)
     except Exception as e:
         print(f"Error saving logs: {e}")
+
+def load_chat_history():
+    """Load chat history from persistent file."""
+    if CHAT_HISTORY_FILE.exists():
+        try:
+            with open(CHAT_HISTORY_FILE, 'rb') as f:
+                return pickle.load(f)
+        except Exception as e:
+            print(f"Error loading chat history: {e}")
+            return []
+    return []
+
+def save_chat_history(chat_history):
+    """Save chat history to persistent file."""
+    try:
+        with open(CHAT_HISTORY_FILE, 'wb') as f:
+            pickle.dump(chat_history, f)
+    except Exception as e:
+        print(f"Error saving chat history: {e}")
 
 # Initialize session state for logs and startup time
 if 'command_logs' not in st.session_state:
@@ -417,6 +437,217 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
     except Exception as e:
         log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Exception: {str(e)}")
         return {'vm_name': vm_name, 'zone': zone, 'error': str(e)}
+
+def execute_kubectl_command(command, node="k8s-master-001", zone="us-central1-a", timeout=20):
+    """Execute kubectl command on master node via SSH. Returns dict with success, output, error."""
+    try:
+        # Use proper kubeconfig path - try multiple common locations
+        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl {command} || kubectl --kubeconfig=/etc/kubernetes/admin.conf {command} || kubectl --kubeconfig=$HOME/.kube/config {command}"
+        ssh_command = [
+            "gcloud", "compute", "ssh", node,
+            f"--zone={zone}",
+            f"--command={full_command}"
+        ]
+        
+        result = subprocess.run(
+            ssh_command,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        if result.returncode == 0:
+            log_command(f"kubectl {command}", "✓ Success", f"Output: {len(result.stdout)} bytes")
+            return {'success': True, 'output': result.stdout, 'error': None}
+        else:
+            error_msg = result.stderr[:500] if result.stderr else "Unknown error"
+            log_command(f"kubectl {command}", "❌ Failed", error_msg)
+            return {'success': False, 'output': None, 'error': error_msg}
+            
+    except subprocess.TimeoutExpired:
+        log_command(f"kubectl {command}", "❌ Failed", f"Timeout after {timeout}s")
+        return {'success': False, 'output': None, 'error': f'Command timed out after {timeout} seconds'}
+    except Exception as e:
+        log_command(f"kubectl {command}", "❌ Failed", str(e))
+        return {'success': False, 'output': None, 'error': str(e)}
+
+def execute_ssh_command(command, vm_name, zone, timeout=20):
+    """Execute bash command on VM via SSH. Returns dict with success, output, error."""
+    try:
+        ssh_command = [
+            "gcloud", "compute", "ssh", vm_name,
+            f"--zone={zone}",
+            f"--command={command}"
+        ]
+        
+        result = subprocess.run(
+            ssh_command,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        
+        if result.returncode == 0:
+            log_command(f"SSH {vm_name}: {command[:50]}", "✓ Success", f"Output: {len(result.stdout)} bytes")
+            return {'success': True, 'output': result.stdout, 'error': None}
+        else:
+            error_msg = result.stderr[:500] if result.stderr else "Unknown error"
+            log_command(f"SSH {vm_name}: {command[:50]}", "❌ Failed", error_msg)
+            return {'success': False, 'output': None, 'error': error_msg}
+            
+    except subprocess.TimeoutExpired:
+        log_command(f"SSH {vm_name}: {command[:50]}", "❌ Failed", f"Timeout after {timeout}s")
+        return {'success': False, 'output': None, 'error': f'Command timed out after {timeout} seconds'}
+    except Exception as e:
+        log_command(f"SSH {vm_name}: {command[:50]}", "❌ Failed", str(e))
+        return {'success': False, 'output': None, 'error': str(e)}
+
+def analyze_question_intent(question):
+    """Analyze user question to determine if live cluster access is needed."""
+    question_lower = question.lower()
+    
+    # Keywords that indicate need for live cluster access
+    live_keywords = [
+        'taint', 'label', 'annotation', 'describe', 'logs', 'log',
+        'exec', 'execute', 'run', 'check if', 'is there', 'show me',
+        'current', 'now', 'latest', 'recent', 'live', 'real-time',
+        'file', 'directory', 'process', 'service', 'port',
+        'config', 'configuration', 'yaml', 'manifest',
+        'events', 'conditions', 'readiness', 'liveness',
+        'master node', 'worker node'  # Specific node questions
+    ]
+    
+    # Keywords that indicate cached data is sufficient
+    cached_keywords = [
+        'how many', 'count', 'total', 'list all', 'show all',
+        'what vms', 'overview', 'summary'
+    ]
+    
+    # Check for live access indicators
+    needs_live = any(keyword in question_lower for keyword in live_keywords)
+    
+    # Check for cached data indicators  
+    use_cached = any(keyword in question_lower for keyword in cached_keywords)
+    
+    # Special case: Questions about specific nodes (master/worker) should use live data
+    if ('master' in question_lower or 'worker' in question_lower) and 'node' in question_lower:
+        needs_live = True
+    
+    # If both or neither, default to cached for speed
+    # unless specific kubectl/describe mentioned
+    if 'kubectl' in question_lower or 'describe' in question_lower:
+        needs_live = True
+    
+    return {
+        'needs_live_access': needs_live and not use_cached,
+        'use_cached': use_cached or not needs_live
+    }
+
+def execute_cluster_operation(question):
+    """Execute live cluster operations based on question analysis."""
+    results = []
+    
+    question_lower = question.lower()
+    
+    # Detect which node is being asked about
+    target_nodes = []
+    if 'master' in question_lower:
+        target_nodes.append('k8s-master-001')
+    if 'worker' in question_lower:
+        target_nodes.append('k8s-worker-01')
+    if not target_nodes:  # If no specific node mentioned, check both
+        target_nodes = ['k8s-master-001', 'k8s-worker-01']
+    
+    # Node taints check
+    if 'taint' in question_lower:
+        results.append("🔄 Checking node taints...\n")
+        for node in target_nodes:
+            cmd_result = execute_kubectl_command(f"describe node {node}")
+            if cmd_result['success']:
+                # Parse taints from output
+                output = cmd_result['output']
+                if 'Taints:' in output:
+                    taint_line = [line for line in output.split('\n') if 'Taints:' in line]
+                    if taint_line:
+                        results.append(f"✓ Node {node}: {taint_line[0].strip()}\n")
+                else:
+                    results.append(f"✓ Node {node}: No taints found\n")
+            else:
+                results.append(f"❌ Failed to check {node}: {cmd_result['error']}\n")
+    
+    # General node questions - natural language like "describe worker node", "tell me about master node"
+    elif 'node' in question_lower and ('master' in question_lower or 'worker' in question_lower or 'nodes' in question_lower):
+        results.append(f"🔄 Getting detailed info for {', '.join(target_nodes)}...\n")
+        for node in target_nodes:
+            cmd_result = execute_kubectl_command(f"describe node {node}")
+            if cmd_result['success']:
+                results.append(f"✓ Node {node} Details:\n```\n{cmd_result['output'][:3000]}\n```\n")
+            else:
+                results.append(f"❌ Failed to check {node}: {cmd_result['error']}\n")
+    
+    # Pod logs - natural language like "show me logs for nginx pod"
+    elif 'log' in question_lower or 'logs' in question_lower:
+        # Extract pod name if mentioned
+        words = question.split()
+        pod_name = None
+        for i, word in enumerate(words):
+            if 'pod' in word.lower() and i + 1 < len(words):
+                pod_name = words[i + 1].strip('.,?!')
+                break
+        
+        if pod_name:
+            results.append(f"🔄 Fetching logs for pod '{pod_name}'...\n")
+            cmd_result = execute_kubectl_command(f"logs {pod_name} --tail=50")
+            if cmd_result['success']:
+                results.append(f"✓ Logs (last 50 lines):\n```\n{cmd_result['output'][:1000]}\n```\n")
+            else:
+                # Try with namespace
+                cmd_result = execute_kubectl_command(f"logs {pod_name} -n kube-system --tail=50")
+                if cmd_result['success']:
+                    results.append(f"✓ Logs from kube-system namespace:\n```\n{cmd_result['output'][:1000]}\n```\n")
+                else:
+                    results.append(f"❌ Could not fetch logs: {cmd_result['error']}\n")
+    
+    # Kubectl-style describe commands (only if "kubectl describe" explicitly mentioned)
+    elif 'kubectl' in question_lower and 'describe' in question_lower:
+        words = question.split()
+        for i, word in enumerate(words):
+            if word.lower() == 'describe' and i + 2 < len(words):
+                resource_type = words[i + 1]
+                resource_name = words[i + 2].strip('.,?!')
+                results.append(f"🔄 Describing {resource_type} '{resource_name}'...\n")
+                cmd_result = execute_kubectl_command(f"describe {resource_type} {resource_name}")
+                if cmd_result['success']:
+                    results.append(f"✓ Description:\n```\n{cmd_result['output'][:2000]}\n```\n")
+                else:
+                    results.append(f"❌ Failed: {cmd_result['error']}\n")
+                break
+    
+    # Generic kubectl get commands (only if "kubectl get" explicitly mentioned)
+    elif 'kubectl' in question_lower and ('get pod' in question_lower or 'get service' in question_lower or 'get deployment' in question_lower):
+        # Extract the get command
+        if 'get pod' in question_lower:
+            resource = 'pods'
+        elif 'get service' in question_lower:
+            resource = 'services'
+        elif 'get deployment' in question_lower:
+            resource = 'deployments'
+        
+        results.append(f"🔄 Getting {resource}...\n")
+        cmd_result = execute_kubectl_command(f"get {resource} --all-namespaces")
+        if cmd_result['success']:
+            results.append(f"✓ {resource.capitalize()}:\n```\n{cmd_result['output'][:2000]}\n```\n")
+        else:
+            results.append(f"❌ Failed: {cmd_result['error']}\n")
+    
+    # If no specific operation matched, try a general describe nodes
+    elif not results:
+        results.append("🔄 Fetching current cluster state...\n")
+        cmd_result = execute_kubectl_command("get nodes -o wide")
+        if cmd_result['success']:
+            results.append(f"✓ Nodes:\n```\n{cmd_result['output']}\n```\n")
+    
+    return ''.join(results)
 
 def build_cluster_context():
     """Build a comprehensive context string about the current cluster state for the AI."""
@@ -961,6 +1192,8 @@ def main():
         if page == "🤖 AI Assistant":
             if st.button("🗑️ Clear Chat", key="clear_chat_button", use_container_width=True):
                 st.session_state.chat_history = []
+                st.session_state.historical_context = []
+                save_chat_history([])  # Clear the persistent file too
                 st.rerun()
         else:
             if st.button("🔄 Refresh", key="manual_refresh_button", use_container_width=True):
@@ -1326,6 +1559,11 @@ def main():
                 if 'chat_history' not in st.session_state:
                     st.session_state.chat_history = []
                 
+                # Load historical context for AI (but don't display old messages)
+                if 'chat_context_loaded' not in st.session_state:
+                    st.session_state.historical_context = load_chat_history()
+                    st.session_state.chat_context_loaded = True
+                
                 # Add custom CSS to reduce all spacing around chat
                 st.markdown("""
                 <style>
@@ -1350,83 +1588,143 @@ def main():
                 # K8s logo URL
                 k8s_avatar = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.png"
                 
-                chat_container = st.container(height=500)
-                with chat_container:
-                    # Display welcome message if no chat history
-                    if not st.session_state.chat_history:
-                        with st.chat_message("assistant", avatar=k8s_avatar):
-                            # Get cluster status for welcome message
-                            vm_count = len(st.session_state.get('vm_table_cache', []))
-                            pod_count = len(st.session_state.get('pods_cache', []))
-                            
-                            welcome_msg = f"""👋 **Hi! I'm your Kubernetes AI Assistant with LIVE cluster access!**
+                # Display welcome message if no chat history
+                if not st.session_state.chat_history:
+                    with st.chat_message("assistant", avatar=k8s_avatar):
+                        # Get cluster status for welcome message
+                        vm_count = len(st.session_state.get('vm_table_cache', []))
+                        pod_count = len(st.session_state.get('pods_cache', []))
+                        
+                        welcome_msg = f"""👋 **Hi! I'm your Kubernetes AI Assistant with LIVE cluster access!**
 
-**I can see YOUR cluster:**
-- 🖥️ VMs: {vm_count if vm_count > 0 else '❌ No data yet - visit VM Status tab'}
-- 🚀 Pods: {pod_count if pod_count > 0 else '❌ No data yet - visit Pod Monitor tab'}
-- 📝 Command history: Available
+**Ask me anything about your cluster:**
+- Node status, taints, labels, configurations
+- Pod details, logs, deployments, services
+- Resource usage, capacity, health checks
+- Any Kubernetes-related questions
 
-**Ask me about:**
-- "What's the status of my cluster?"
-- "Show me my VMs and their resource usage"
-- "Which pods are running?"
-- "Is my master node healthy?"
-- "Any pods in failed state?"
-- Or any Kubernetes concept/troubleshooting question!
+I can access your cluster in real-time via SSH/kubectl or use cached monitoring data for quick answers!
 
-💡 **Tip:** Visit VM Status and Pod Monitor tabs first for full cluster visibility!"""
-                            
-                            st.markdown(welcome_msg)
-                    
-                    # Display all chat history
-                    for message in st.session_state.chat_history:
-                        avatar = k8s_avatar if message["role"] == "assistant" else None
-                        with st.chat_message(message["role"], avatar=avatar):
-                            st.markdown(message["content"])
+*💡 Tip: Visit VM Status and Pod Monitor tabs first to populate cached data.*"""
+                        
+                        st.markdown(welcome_msg)
+                
+                # Display all chat history
+                for message in st.session_state.chat_history:
+                    avatar = k8s_avatar if message["role"] == "assistant" else None
+                    with st.chat_message(message["role"], avatar=avatar):
+                        st.markdown(message["content"])
                 
                 # Chat input fixed at the bottom
                 if prompt := st.chat_input("Ask me about YOUR cluster (VMs, pods, resources)..."):
                     # Add user message to chat history
                     st.session_state.chat_history.append({"role": "user", "content": prompt})
+                    full_history_to_save = st.session_state.get('historical_context', []) + st.session_state.chat_history
+                    save_chat_history(full_history_to_save)  # Save combined history
                     
-                    # Get AI response with cluster context
-                    try:
-                        # Build cluster context
-                        cluster_context = build_cluster_context()
+                    # Create placeholder for streaming response
+                    with st.chat_message("assistant", avatar=k8s_avatar):
+                        response_placeholder = st.empty()
                         
-                        # Create full prompt with context
-                        full_prompt = f"""You are a Kubernetes cluster assistant with access to real-time data from the user's cluster.
+                        try:
+                            # Analyze question intent
+                            intent = analyze_question_intent(prompt)
+                            
+                            # Build initial context from cached data
+                            cluster_context = build_cluster_context()
+                            live_data = ""
+                            
+                            # If live access needed, execute cluster operations
+                            if intent['needs_live_access']:
+                                # Show progress indicator
+                                response_placeholder.markdown("🔄 **Accessing your cluster...**")
+                                
+                                # Execute live operations
+                                live_data = execute_cluster_operation(prompt)
+                                
+                                # Update progress (without showing raw output)
+                                if live_data:
+                                    response_placeholder.markdown("🔄 **Analyzing cluster data...**")
+                                    cluster_context = f"{cluster_context}\n\n=== LIVE CLUSTER DATA ===\n{live_data}"
+                                else:
+                                    # Fallback to cached data
+                                    response_placeholder.markdown("⚠️ **Live access failed, using cached data...**")
+                                    live_data = "\n(Note: Using cached data as live cluster access encountered issues)"
+                            
+                            # Create full prompt with context
+                            # Build conversation history for context (include historical + current session)
+                            full_history = st.session_state.get('historical_context', []) + st.session_state.chat_history
+                            conversation_context = ""
+                            if len(full_history) > 1:  # If there's more than just the current message
+                                conversation_context = "\n\n=== PREVIOUS CONVERSATION ===\n"
+                                # Include last 10 exchanges for context (20 messages = 10 Q&A pairs)
+                                recent_history = full_history[-20:] if len(full_history) > 20 else full_history
+                                for msg in recent_history:
+                                    role = "User" if msg["role"] == "user" else "Assistant"
+                                    conversation_context += f"{role}: {msg['content'][:200]}...\n"  # Truncate long messages
+                            
+                            full_prompt = f"""You are a Kubernetes cluster assistant with access to the user's cluster.
 
 {cluster_context}
+{conversation_context}
 
 User Question: {prompt}
 
 Instructions:
 - Answer based on the ACTUAL cluster data provided above
+- If live cluster data is included, prioritize that over cached data
+- When using LIVE data, explicitly mention it (e.g., "According to live cluster check...", "Live kubectl output shows...")
+- When using CACHED data, explicitly mention it (e.g., "Based on cached data...", "From recent monitoring data...")
 - Reference specific VMs, pods, namespaces, or metrics when relevant
-- If the data shows issues or anomalies, point them out clearly
-- If no data is available for a specific area, mention that the user should visit that tab and refresh
+- If data shows issues, point them out clearly
 - Be concise, technical, and actionable
-- Use the exact VM names, pod names, and values from the data
+- Use exact names and values from the data
+- Remember context from previous conversation if relevant
+- IMPORTANT: Clearly indicate data source (live vs cached) for each piece of information you provide
 """
-                        
-                        # Send message to Gemini via REST helper with increased token limit
-                        resp_json = generate_content(full_prompt, api_key=api_key, max_tokens=2000, temperature=0.2)
-                        # parse first candidate text
-                        candidate = resp_json.get('candidates', [{}])[0]
-                        ai_parts = candidate.get('content', {}).get('parts', [])
-                        ai_response = ''
-                        if ai_parts:
-                            ai_response = ''.join([p.get('text', '') for p in ai_parts])
-                        else:
-                            ai_response = json.dumps(resp_json)
+                            
+                            # Send message to Gemini
+                            resp_json = generate_content(full_prompt, api_key=api_key, max_tokens=2000, temperature=0.2)
+                            
+                            # Parse response
+                            candidate = resp_json.get('candidates', [{}])[0]
+                            ai_parts = candidate.get('content', {}).get('parts', [])
+                            ai_response = ''
+                            if ai_parts:
+                                ai_response = ''.join([p.get('text', '') for p in ai_parts])
+                            else:
+                                ai_response = json.dumps(resp_json)
+                            
+                            # If we used cached data due to failure, append detailed note
+                            if intent['needs_live_access'] and not live_data:
+                                ai_response += "\n\n⚠️ *Note: This answer is based on cached data. Live cluster access failed. Please check your cluster connectivity.*"
+                            elif intent['needs_live_access'] and "❌" in live_data:
+                                # Extract which operations failed
+                                failed_ops = [line.strip() for line in live_data.split('\n') if '❌' in line]
+                                if failed_ops:
+                                    ai_response += "\n\n---\n**⚠️ Data Source Details:**\n"
+                                    ai_response += "- ✅ Information marked as 'live' or 'kubectl' came from real-time cluster access\n"
+                                    ai_response += "- 📊 Information marked as 'cached' or 'monitoring' came from recent dashboard data\n"
+                                    ai_response += "\n**Failed Operations:**\n"
+                                    for op in failed_ops[:3]:  # Show up to 3 failures
+                                        ai_response += f"- {op}\n"
+                                else:
+                                    ai_response += "\n\n⚠️ *Note: Some live operations encountered issues. Answer combines live and cached data where available.*"
+                            
+                            # Display final response (replaces progress indicators)
+                            response_placeholder.markdown(ai_response)
+                            
+                            # Add to history and save (combine historical + current for persistence)
+                            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+                            full_history_to_save = st.session_state.get('historical_context', []) + st.session_state.chat_history
+                            save_chat_history(full_history_to_save)
 
-                        # Add AI response to history
-                        st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-
-                    except Exception as e:
-                        error_msg = f"Error getting AI response: {str(e)}"
-                        st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                        except Exception as e:
+                            error_msg = f"❌ **Error:** {str(e)}\n\n*Falling back to cached data if available.*"
+                            response_placeholder.markdown(error_msg)
+                            st.session_state.chat_history.append({"role": "assistant", "content": error_msg})
+                            full_history_to_save = st.session_state.get('historical_context', []) + st.session_state.chat_history
+                            save_chat_history(full_history_to_save)
                     
                     # Rerun to display new messages
                     st.rerun()
