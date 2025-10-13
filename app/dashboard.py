@@ -418,6 +418,76 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
         log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Exception: {str(e)}")
         return {'vm_name': vm_name, 'zone': zone, 'error': str(e)}
 
+def build_cluster_context():
+    """Build a comprehensive context string about the current cluster state for the AI."""
+    context_parts = []
+    
+    # Header
+    context_parts.append("=== KUBERNETES CLUSTER CONTEXT ===\n")
+    
+    # Monitoring duration
+    if 'dashboard_started' in st.session_state:
+        duration = datetime.now() - st.session_state.dashboard_started
+        hours = int(duration.total_seconds() // 3600)
+        minutes = int((duration.total_seconds() % 3600) // 60)
+        context_parts.append(f"Dashboard Monitoring: {hours}h {minutes}m\n")
+    
+    # VM Status
+    vm_data = st.session_state.get('vm_table_cache', [])
+    if vm_data:
+        context_parts.append(f"\n=== VIRTUAL MACHINES ({len(vm_data)} VMs) ===")
+        for i, vm in enumerate(vm_data, 1):
+            context_parts.append(f"\n{i}. {vm.get('VM Name', 'Unknown')} ({vm.get('Zone', 'N/A')})")
+            context_parts.append(f"   Role: {vm.get('Role', 'N/A')}")
+            context_parts.append(f"   K8s Status: {vm.get('K8s Status', 'N/A')}")
+            context_parts.append(f"   IPs: Internal={vm.get('Internal IP', 'N/A')}, External={vm.get('External IP', 'N/A')}")
+            context_parts.append(f"   CPU: {vm.get('CPU Cores', 'N/A')} cores ({vm.get('CPU %', 'N/A')})")
+            context_parts.append(f"   Memory: {vm.get('Memory Total', 'N/A')} total, {vm.get('Memory Used', 'N/A')} used ({vm.get('Memory %', 'N/A')})")
+            context_parts.append(f"   Disk: {vm.get('Disk Total', 'N/A')} total, {vm.get('Disk Used', 'N/A')} used ({vm.get('Disk %', 'N/A')})")
+    else:
+        context_parts.append("\n=== VIRTUAL MACHINES ===")
+        context_parts.append("No VM data available yet. User needs to visit 'VM Status' tab or click Refresh.")
+    
+    # Pod Status
+    pod_data = st.session_state.get('pods_cache', [])
+    if pod_data:
+        running = sum(1 for p in pod_data if p.get('status') == 'Running')
+        pending = sum(1 for p in pod_data if p.get('status') == 'Pending')
+        failed = sum(1 for p in pod_data if p.get('status') == 'Failed')
+        
+        context_parts.append(f"\n\n=== PODS ({len(pod_data)} total) ===")
+        context_parts.append(f"Status Summary: {running} Running, {pending} Pending, {failed} Failed")
+        
+        # Show first 10 pods with details
+        context_parts.append("\nPod Details:")
+        for i, pod in enumerate(pod_data[:10], 1):
+            context_parts.append(f"\n{i}. {pod.get('name', 'Unknown')}")
+            context_parts.append(f"   Namespace: {pod.get('namespace', 'N/A')}")
+            context_parts.append(f"   Status: {pod.get('status', 'N/A')}")
+            context_parts.append(f"   Node: {pod.get('node', 'N/A')}")
+            context_parts.append(f"   Age: {pod.get('age', 'N/A')}")
+            if pod.get('cpu_request') or pod.get('memory_request'):
+                context_parts.append(f"   Resources: CPU={pod.get('cpu_request', 'N/A')}, Memory={pod.get('memory_request', 'N/A')}")
+        
+        if len(pod_data) > 10:
+            context_parts.append(f"\n... and {len(pod_data) - 10} more pods")
+    else:
+        context_parts.append("\n\n=== PODS ===")
+        context_parts.append("No pod data available yet. User needs to visit 'Pod Monitor' tab or click Refresh.")
+    
+    # Recent command logs
+    logs = st.session_state.get('command_logs', [])
+    if logs:
+        recent_logs = logs[-5:]  # Last 5 commands
+        context_parts.append("\n\n=== RECENT COMMANDS ===")
+        for i, log in enumerate(recent_logs, 1):
+            timestamp = log.get('timestamp', 'N/A')
+            command = log.get('command', 'N/A')
+            status = log.get('status', 'N/A')
+            context_parts.append(f"{i}. [{timestamp}] {command} - {status}")
+    
+    return '\n'.join(context_parts)
+
 def main():
     st.set_page_config(
         page_title="AI Powered K8s Virtual Assistant",
@@ -1285,7 +1355,28 @@ def main():
                     # Display welcome message if no chat history
                     if not st.session_state.chat_history:
                         with st.chat_message("assistant", avatar=k8s_avatar):
-                            st.markdown("👋 **Hi! I'm your Kubernetes AI Assistant.**\n\nAsk me about:\n- Kubernetes concepts & architecture\n- Cluster troubleshooting & debugging\n- Pod & deployment management\n- Resource optimization & scaling\n- Best practices & security")
+                            # Get cluster status for welcome message
+                            vm_count = len(st.session_state.get('vm_table_cache', []))
+                            pod_count = len(st.session_state.get('pods_cache', []))
+                            
+                            welcome_msg = f"""👋 **Hi! I'm your Kubernetes AI Assistant with LIVE cluster access!**
+
+**I can see YOUR cluster:**
+- 🖥️ VMs: {vm_count if vm_count > 0 else '❌ No data yet - visit VM Status tab'}
+- 🚀 Pods: {pod_count if pod_count > 0 else '❌ No data yet - visit Pod Monitor tab'}
+- 📝 Command history: Available
+
+**Ask me about:**
+- "What's the status of my cluster?"
+- "Show me my VMs and their resource usage"
+- "Which pods are running?"
+- "Is my master node healthy?"
+- "Any pods in failed state?"
+- Or any Kubernetes concept/troubleshooting question!
+
+💡 **Tip:** Visit VM Status and Pod Monitor tabs first for full cluster visibility!"""
+                            
+                            st.markdown(welcome_msg)
                     
                     # Display all chat history
                     for message in st.session_state.chat_history:
@@ -1294,14 +1385,33 @@ def main():
                             st.markdown(message["content"])
                 
                 # Chat input fixed at the bottom
-                if prompt := st.chat_input("Ask me anything about Kubernetes..."):
+                if prompt := st.chat_input("Ask me about YOUR cluster (VMs, pods, resources)..."):
                     # Add user message to chat history
                     st.session_state.chat_history.append({"role": "user", "content": prompt})
                     
-                    # Get AI response
+                    # Get AI response with cluster context
                     try:
-                        # Send message to Gemini via REST helper
-                        resp_json = generate_content(prompt, api_key=api_key, max_tokens=512, temperature=0.2)
+                        # Build cluster context
+                        cluster_context = build_cluster_context()
+                        
+                        # Create full prompt with context
+                        full_prompt = f"""You are a Kubernetes cluster assistant with access to real-time data from the user's cluster.
+
+{cluster_context}
+
+User Question: {prompt}
+
+Instructions:
+- Answer based on the ACTUAL cluster data provided above
+- Reference specific VMs, pods, namespaces, or metrics when relevant
+- If the data shows issues or anomalies, point them out clearly
+- If no data is available for a specific area, mention that the user should visit that tab and refresh
+- Be concise, technical, and actionable
+- Use the exact VM names, pod names, and values from the data
+"""
+                        
+                        # Send message to Gemini via REST helper with increased token limit
+                        resp_json = generate_content(full_prompt, api_key=api_key, max_tokens=2000, temperature=0.2)
                         # parse first candidate text
                         candidate = resp_json.get('candidates', [{}])[0]
                         ai_parts = candidate.get('content', {}).get('parts', [])
