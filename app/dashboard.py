@@ -719,6 +719,380 @@ def build_cluster_context():
     
     return '\n'.join(context_parts)
 
+# ==================================================
+# TOOLS - Actions the agent can perform
+# ==================================================
+
+def tool_get_cluster_resources(resource_type, namespace=None):
+    """List resources like pods, nodes, services"""
+    if namespace:
+        return execute_kubectl_command(f"get {resource_type} -n {namespace}")
+    else:
+        return execute_kubectl_command(f"get {resource_type} --all-namespaces")
+
+def tool_describe_resource(resource_type, resource_name=None, name=None, namespace="default"):
+    """Get details about a specific resource (accepts both resource_name and name)"""
+    # Accept both 'resource_name' and 'name' parameters
+    actual_name = resource_name or name
+    if not actual_name:
+        return {'success': False, 'error': 'Resource name is required'}
+    
+    if resource_type == "node":
+        result = execute_kubectl_command(f"describe {resource_type} {actual_name}")
+        
+        # For successful node descriptions, extract key sections to avoid truncation
+        if result.get('success') and result.get('output'):
+            output = result['output']
+            
+            # Extract important sections
+            sections_to_extract = {
+                'Taints': [],
+                'Conditions': [],
+                'Capacity': [],
+                'Allocatable': [],
+                'System Info': []
+            }
+            
+            lines = output.split('\n')
+            current_section = None
+            
+            for line in lines:
+                # Detect section headers
+                if line.startswith('Taints:'):
+                    current_section = 'Taints'
+                    sections_to_extract['Taints'].append(line)
+                elif line.startswith('Conditions:'):
+                    current_section = 'Conditions'
+                    sections_to_extract['Conditions'].append(line)
+                elif line.startswith('Capacity:'):
+                    current_section = 'Capacity'
+                    sections_to_extract['Capacity'].append(line)
+                elif line.startswith('Allocatable:'):
+                    current_section = 'Allocatable'
+                    sections_to_extract['Allocatable'].append(line)
+                elif line.startswith('System Info:'):
+                    current_section = 'System Info'
+                    sections_to_extract['System Info'].append(line)
+                elif current_section and line.strip():
+                    # Continue collecting lines for current section
+                    sections_to_extract[current_section].append(line)
+                    # Stop after reasonable amount
+                    if current_section == 'Conditions' and len(sections_to_extract['Conditions']) > 20:
+                        current_section = None
+                    elif current_section and len(sections_to_extract[current_section]) > 15:
+                        current_section = None
+                elif not line.strip():
+                    current_section = None
+            
+            # Build condensed output
+            condensed_parts = []
+            for section, lines in sections_to_extract.items():
+                if lines:
+                    condensed_parts.append('\n'.join(lines))
+            
+            if condensed_parts:
+                result['output'] = '\n\n'.join(condensed_parts)
+        
+        return result
+    else:
+        return execute_kubectl_command(f"describe {resource_type} {actual_name} -n {namespace}")
+
+def tool_get_pod_logs(pod_name=None, name=None, namespace="default", tail_lines=50):
+    """Get logs from a pod (accepts both pod_name and name, supports partial names)"""
+    actual_name = pod_name or name
+    if not actual_name:
+        return {'success': False, 'error': 'Pod name is required'}
+    
+    # First, try direct pod name
+    result = execute_kubectl_command(f"logs {actual_name} -n {namespace} --tail={tail_lines}")
+    
+    # If failed, try to search for matching pods (handles partial names)
+    if not result.get('success', False):
+        # Get all pods and find matches
+        pods_result = execute_kubectl_command(f"get pods -n {namespace} -o json")
+        if pods_result.get('success'):
+            try:
+                import json
+                pods_data = json.loads(pods_result['output'])
+                matching_pods = [
+                    pod['metadata']['name'] 
+                    for pod in pods_data.get('items', [])
+                    if actual_name.lower() in pod['metadata']['name'].lower()
+                ]
+                
+                if matching_pods:
+                    # Use the first matching pod
+                    full_pod_name = matching_pods[0]
+                    result = execute_kubectl_command(f"logs {full_pod_name} -n {namespace} --tail={tail_lines}")
+                    # Add info about which pod was used - prepend to output
+                    if result.get('success'):
+                        result['output'] = f"[Logs from pod: {full_pod_name}]\n\n{result.get('output', '')}"
+                    else:
+                        result['error'] = f"Found pod {full_pod_name} but failed to get logs: {result.get('error', '')}"
+                else:
+                    result['error'] = f"No pods found matching '{actual_name}' in namespace '{namespace}'. Use 'kubectl get pods -n {namespace}' to list available pods."
+            except Exception as e:
+                result['error'] = f"Error searching for pod '{actual_name}': {str(e)}. Original error: {result.get('error', '')}"
+    
+    return result
+
+def tool_check_node_health(node_name=None, name=None):
+    """Check if a node is healthy (accepts both node_name and name)"""
+    actual_name = node_name or name
+    if not actual_name:
+        return {'success': False, 'error': 'Node name is required'}
+    return execute_kubectl_command(f"describe node {actual_name}")
+
+def tool_check_cluster_health():
+    """Check overall cluster health"""
+    return execute_kubectl_command("get nodes -o wide")
+
+TOOLS = [
+    {
+        "name": "get_cluster_resources",
+        "description": "List resources like pods, nodes, services. Parameters: resource_type (required), namespace (optional)",
+        "function": tool_get_cluster_resources
+    },
+    {
+        "name": "describe_resource",
+        "description": "Get details about a specific resource including taints, labels, conditions. Parameters: resource_type (required, e.g., 'node', 'pod'), name or resource_name (required), namespace (optional, default: 'default')",
+        "function": tool_describe_resource
+    },
+    {
+        "name": "get_pod_logs",
+        "description": "Get logs from a pod. Parameters: name or pod_name (required), namespace (optional, default: 'default'), tail_lines (optional, default: 50)",
+        "function": tool_get_pod_logs
+    },
+    {
+        "name": "check_node_health",
+        "description": "Check if a node is healthy. Parameters: name or node_name (required)",
+        "function": tool_check_node_health
+    },
+    {
+        "name": "check_cluster_health",
+        "description": "Check overall cluster health. No parameters required.",
+        "function": tool_check_cluster_health
+    }
+]
+
+# ==================================================
+# AGENT - The brain that decides which tools to use
+# ==================================================
+
+class K8sAgent:
+    """
+    Agent that uses AI to decide which tools to run for answering questions.
+    
+    Think of this as a smart assistant:
+    - You ask a question
+    - Agent asks Gemini AI "which tools should I use?"
+    - Agent runs those tools
+    - Agent asks Gemini AI "what's the answer based on results?"
+    """
+    
+    def __init__(self, tools):
+        """Initialize agent with available tools."""
+        self.tools = tools
+        self.tool_dict = {tool['name']: tool for tool in tools}
+    
+    def _get_tool_descriptions(self):
+        """Create a formatted list of tools for the AI to choose from."""
+        descriptions = []
+        for tool in self.tools:
+            descriptions.append(f"- {tool['name']}: {tool['description']}")
+        return "\n".join(descriptions)
+    
+    def _execute_tool(self, tool_name, **params):
+        """Execute a specific tool by name with parameters."""
+        if tool_name not in self.tool_dict:
+            return {'success': False, 'error': f'Tool {tool_name} not found'}
+        
+        tool = self.tool_dict[tool_name]
+        try:
+            # Call the tool's function with parameters
+            result = tool['function'](**params)
+            return result
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def answer_question(self, question, cluster_context, conversation_history, api_key=None):
+        """
+        Main method: Answer user's question using 3-phase AI approach.
+        
+        Phase 1 (Planning): Ask AI which tools to use
+        Phase 2 (Execution): Run those tools
+        Phase 3 (Synthesis): Ask AI to analyze results and answer
+        """
+        
+        # PHASE 1: Planning - Ask AI which tools to use
+        tool_menu = self._get_tool_descriptions()
+        planning_prompt = f"""SYSTEM: You are a tool selection system. You must respond ONLY with valid JSON. Do not provide explanations.
+
+USER QUESTION: "{question}"
+
+AVAILABLE TOOLS:
+{tool_menu}
+
+CLUSTER STATE:
+{cluster_context[:500]}
+
+TASK: Output a JSON array of tool calls needed to answer the question.
+
+FORMAT (respond with ONLY this, no other text):
+[{{"tool": "tool_name", "params": {{"key": "value"}}}}]
+
+EXAMPLES:
+Question: "Is cluster healthy?" → [{{"tool": "check_cluster_health", "params": {{}}}}]
+Question: "Show all pods" → [{{"tool": "get_cluster_resources", "params": {{"resource_type": "pods"}}}}]
+Question: "Compare master and worker taints" → [{{"tool": "describe_resource", "params": {{"resource_type": "node", "name": "k8s-master-001"}}}}, {{"tool": "describe_resource", "params": {{"resource_type": "node", "name": "k8s-worker-01"}}}}]
+Question: "How many VMs?" → []
+
+OUTPUT JSON ONLY:
+"""
+        
+        try:
+            # SPECIAL HANDLING: Check question first for known patterns
+            selected_tools = []
+            
+            # Pattern 1: Compare nodes/taints
+            if 'compare' in question.lower() and ('taint' in question.lower() or 'node' in question.lower()):
+                if ('master' in question.lower() and 'worker' in question.lower()) or 'node' in question.lower():
+                    selected_tools = [
+                        {"tool": "describe_resource", "params": {"resource_type": "node", "name": "k8s-master-001"}},
+                        {"tool": "describe_resource", "params": {"resource_type": "node", "name": "k8s-worker-01"}}
+                    ]
+            
+            # Pattern 2: Show logs for a specific pod
+            elif 'log' in question.lower() and ('pod' in question.lower() or 'for' in question.lower()):
+                # Extract pod name from question
+                import re
+                # Look for common patterns: "stress tester", "stress-tester", "coredns", etc.
+                # Handle both spaces and hyphens
+                pod_match = re.search(r'(?:for|pod)\s+\[?(?:pod\])?\s*(\w+(?:[\s-]\w+)*)', question.lower())
+                if pod_match:
+                    pod_name = pod_match.group(1)
+                    # Convert spaces to hyphens (e.g., "stress tester" -> "stress-tester")
+                    pod_name = pod_name.replace(' ', '-')
+                    
+                    # Determine namespace - system pods like coredns are in kube-system
+                    namespace = "kube-system" if pod_name in ['coredns', 'kube-proxy', 'etcd', 'kube-apiserver', 'kube-scheduler', 'kube-controller'] else "default"
+                    
+                    # Extract tail_lines if specified in question
+                    tail_match = re.search(r'(\d+)\s+lines?', question.lower())
+                    tail_lines = int(tail_match.group(1)) if tail_match else 100
+                    
+                    selected_tools = [{"tool": "get_pod_logs", "params": {"name": pod_name, "namespace": namespace, "tail_lines": tail_lines}}]
+            
+            # Pattern 3: Show/list all pods
+            elif ('show' in question.lower() or 'list' in question.lower()) and 'pod' in question.lower():
+                selected_tools = [{"tool": "get_cluster_resources", "params": {"resource_type": "pods"}}]
+            
+            # Pattern 4: Cluster health
+            elif 'health' in question.lower() and 'cluster' in question.lower():
+                selected_tools = [{"tool": "check_cluster_health", "params": {}}]
+            
+            # Pattern 5: Specific node
+            elif 'taint' in question.lower() or ('describe' in question.lower() and 'node' in question.lower()):
+                if 'master' in question.lower():
+                    selected_tools = [{"tool": "describe_resource", "params": {"resource_type": "node", "name": "k8s-master-001"}}]
+                elif 'worker' in question.lower():
+                    selected_tools = [{"tool": "describe_resource", "params": {"resource_type": "node", "name": "k8s-worker-01"}}]
+            
+            # If no pattern matched, ask Gemini
+            if not selected_tools:
+                # Ask Gemini for tool selection
+                planning_response_json = generate_content(planning_prompt, api_key=api_key, max_tokens=500, temperature=0.0)
+                
+                # Extract text from Gemini response
+                candidate = planning_response_json.get('candidates', [{}])[0]
+                ai_parts = candidate.get('content', {}).get('parts', [])
+                planning_response = ''
+                if ai_parts:
+                    planning_response = ''.join([p.get('text', '') for p in ai_parts])
+                
+                # Try to parse the AI's tool selection
+                import re
+                json_match = re.search(r'\[[\s\S]*?\]', planning_response, re.DOTALL)
+                
+                if json_match:
+                    try:
+                        selected_tools = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        selected_tools = []
+            
+            # PHASE 2: Execution - Run the selected tools
+            tool_results = []
+            if selected_tools:
+                for tool_call in selected_tools[:3]:  # Limit to 3 tools max
+                    tool_name = tool_call.get('tool')
+                    params = tool_call.get('params', {})
+                    result = self._execute_tool(tool_name, **params)
+                    tool_results.append({
+                        'tool': tool_name,
+                        'params': params,
+                        'result': result
+                    })
+            
+            # PHASE 3: Synthesis - Ask AI to analyze and answer
+            # Build better results summary with truncation per tool
+            if tool_results:
+                results_parts = []
+                for i, tr in enumerate(tool_results, 1):
+                    # Truncate each tool result to 1500 chars max
+                    result_str = str(tr['result'])
+                    if len(result_str) > 1500:
+                        result_str = result_str[:1500] + "... (truncated)"
+                    
+                    results_parts.append(f"TOOL {i}: {tr['tool']}\nParameters: {tr['params']}\nResult: {result_str}")
+                
+                results_summary = "\n\n---\n\n".join(results_parts)
+                # Add tool count info for debugging
+                tool_count_info = f"\n\n[DEBUG: Executed {len(tool_results)} tool(s)]"
+            else:
+                results_summary = "No tools were executed."
+                tool_count_info = ""
+            
+            synthesis_prompt = f"""You are a helpful Kubernetes cluster assistant answering a user's question.
+
+User's question: "{question}"
+
+Background cluster context:
+{cluster_context[:1000]}
+
+Tools executed and their results:
+{results_summary[:5000]}
+{tool_count_info}
+
+Recent conversation for context:
+{conversation_history[-300:]}
+
+CRITICAL INSTRUCTIONS:
+1. I have executed multiple tools - USE DATA FROM **ALL** TOOL RESULTS above
+2. If comparing nodes, make sure to include information from BOTH tool results
+3. Provide a direct answer with specific details from each tool
+4. Do NOT say "I don't have information" if the tool result is provided above
+5. For comparisons, create a clear side-by-side comparison
+6. Do NOT show tool calls or JSON - only show the final answer
+7. If showing pod logs, display the actual log content from the tool result
+8. Do NOT suggest kubectl commands - the tools have already been executed
+
+Your complete answer using ALL tool results:
+"""
+            
+            final_answer_json = generate_content(synthesis_prompt, api_key=api_key, max_tokens=1000)
+            
+            # Extract text from Gemini response
+            candidate = final_answer_json.get('candidates', [{}])[0]
+            ai_parts = candidate.get('content', {}).get('parts', [])
+            final_answer = ''
+            if ai_parts:
+                final_answer = ''.join([p.get('text', '') for p in ai_parts])
+            
+            return final_answer
+            
+        except Exception as e:
+            return f"Sorry, I encountered an error: {str(e)}\n\nI'll try to help based on cached data instead."
+
 def main():
     st.set_page_config(
         page_title="AI Powered K8s Virtual Assistant",
@@ -1615,6 +1989,10 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                     with st.chat_message(message["role"], avatar=avatar):
                         st.markdown(message["content"])
                 
+                # Initialize the agent once (reuse across questions)
+                if 'k8s_agent' not in st.session_state:
+                    st.session_state.k8s_agent = K8sAgent(TOOLS)
+                
                 # Chat input fixed at the bottom
                 if prompt := st.chat_input("Ask me about YOUR cluster (VMs, pods, resources)..."):
                     # Add user message to chat history
@@ -1627,89 +2005,30 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                         response_placeholder = st.empty()
                         
                         try:
-                            # Analyze question intent
-                            intent = analyze_question_intent(prompt)
+                            # Show progress indicator
+                            response_placeholder.markdown("🤖 **Thinking...**")
                             
-                            # Build initial context from cached data
+                            # Build cluster context from cached data
                             cluster_context = build_cluster_context()
-                            live_data = ""
                             
-                            # If live access needed, execute cluster operations
-                            if intent['needs_live_access']:
-                                # Show progress indicator
-                                response_placeholder.markdown("🔄 **Accessing your cluster...**")
-                                
-                                # Execute live operations
-                                live_data = execute_cluster_operation(prompt)
-                                
-                                # Update progress (without showing raw output)
-                                if live_data:
-                                    response_placeholder.markdown("🔄 **Analyzing cluster data...**")
-                                    cluster_context = f"{cluster_context}\n\n=== LIVE CLUSTER DATA ===\n{live_data}"
-                                else:
-                                    # Fallback to cached data
-                                    response_placeholder.markdown("⚠️ **Live access failed, using cached data...**")
-                                    live_data = "\n(Note: Using cached data as live cluster access encountered issues)"
-                            
-                            # Create full prompt with context
-                            # Build conversation history for context (include historical + current session)
+                            # Build conversation history for context
                             full_history = st.session_state.get('historical_context', []) + st.session_state.chat_history
                             conversation_context = ""
-                            if len(full_history) > 1:  # If there's more than just the current message
+                            if len(full_history) > 1:
                                 conversation_context = "\n\n=== PREVIOUS CONVERSATION ===\n"
-                                # Include last 10 exchanges for context (20 messages = 10 Q&A pairs)
                                 recent_history = full_history[-20:] if len(full_history) > 20 else full_history
                                 for msg in recent_history:
                                     role = "User" if msg["role"] == "user" else "Assistant"
-                                    conversation_context += f"{role}: {msg['content'][:200]}...\n"  # Truncate long messages
+                                    conversation_context += f"{role}: {msg['content'][:200]}...\n"
                             
-                            full_prompt = f"""You are a Kubernetes cluster assistant with access to the user's cluster.
-
-{cluster_context}
-{conversation_context}
-
-User Question: {prompt}
-
-Instructions:
-- Answer based on the ACTUAL cluster data provided above
-- If live cluster data is included, prioritize that over cached data
-- When using LIVE data, explicitly mention it (e.g., "According to live cluster check...", "Live kubectl output shows...")
-- When using CACHED data, explicitly mention it (e.g., "Based on cached data...", "From recent monitoring data...")
-- Reference specific VMs, pods, namespaces, or metrics when relevant
-- If data shows issues, point them out clearly
-- Be concise, technical, and actionable
-- Use exact names and values from the data
-- Remember context from previous conversation if relevant
-- IMPORTANT: Clearly indicate data source (live vs cached) for each piece of information you provide
-"""
-                            
-                            # Send message to Gemini
-                            resp_json = generate_content(full_prompt, api_key=api_key, max_tokens=2000, temperature=0.2)
-                            
-                            # Parse response
-                            candidate = resp_json.get('candidates', [{}])[0]
-                            ai_parts = candidate.get('content', {}).get('parts', [])
-                            ai_response = ''
-                            if ai_parts:
-                                ai_response = ''.join([p.get('text', '') for p in ai_parts])
-                            else:
-                                ai_response = json.dumps(resp_json)
-                            
-                            # If we used cached data due to failure, append detailed note
-                            if intent['needs_live_access'] and not live_data:
-                                ai_response += "\n\n⚠️ *Note: This answer is based on cached data. Live cluster access failed. Please check your cluster connectivity.*"
-                            elif intent['needs_live_access'] and "❌" in live_data:
-                                # Extract which operations failed
-                                failed_ops = [line.strip() for line in live_data.split('\n') if '❌' in line]
-                                if failed_ops:
-                                    ai_response += "\n\n---\n**⚠️ Data Source Details:**\n"
-                                    ai_response += "- ✅ Information marked as 'live' or 'kubectl' came from real-time cluster access\n"
-                                    ai_response += "- 📊 Information marked as 'cached' or 'monitoring' came from recent dashboard data\n"
-                                    ai_response += "\n**Failed Operations:**\n"
-                                    for op in failed_ops[:3]:  # Show up to 3 failures
-                                        ai_response += f"- {op}\n"
-                                else:
-                                    ai_response += "\n\n⚠️ *Note: Some live operations encountered issues. Answer combines live and cached data where available.*"
+                            # Use the agent to answer the question!
+                            response_placeholder.markdown("🔄 **Analyzing and executing tools...**")
+                            ai_response = st.session_state.k8s_agent.answer_question(
+                                question=prompt,
+                                cluster_context=cluster_context,
+                                conversation_history=conversation_context,
+                                api_key=api_key
+                            )
                             
                             # Display final response (replaces progress indicators)
                             response_placeholder.markdown(ai_response)
