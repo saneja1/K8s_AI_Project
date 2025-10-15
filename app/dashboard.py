@@ -28,6 +28,15 @@ if parent_dir not in sys.path:
 from core.system import check_requirements, check_requirements_cloud
 from utils.gen_api import generate_content
 
+# Import LangChain components
+try:
+    from utils.langchain_agent import create_k8s_agent
+    from utils.langchain_tools import ALL_TOOLS
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    print("Warning: LangChain not available. Install with: pip install -r requirements.txt")
+
 # Log file paths
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
 CHAT_HISTORY_FILE = Path(__file__).parent.parent / '.logs' / 'chat_history.pkl'
@@ -1568,6 +1577,9 @@ def main():
                 st.session_state.chat_history = []
                 st.session_state.historical_context = []
                 save_chat_history([])  # Clear the persistent file too
+                # Clear LangChain agent memory if available
+                if 'k8s_agent' in st.session_state and hasattr(st.session_state.k8s_agent, 'clear_memory'):
+                    st.session_state.k8s_agent.clear_memory()
                 st.rerun()
         else:
             if st.button("🔄 Refresh", key="manual_refresh_button", use_container_width=True):
@@ -1989,9 +2001,17 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                     with st.chat_message(message["role"], avatar=avatar):
                         st.markdown(message["content"])
                 
-                # Initialize the agent once (reuse across questions)
+                # Initialize the LangChain agent once (reuse across questions)
                 if 'k8s_agent' not in st.session_state:
-                    st.session_state.k8s_agent = K8sAgent(TOOLS)
+                    if LANGCHAIN_AVAILABLE:
+                        st.session_state.k8s_agent = create_k8s_agent(
+                            tools=ALL_TOOLS,
+                            api_key=api_key,
+                            verbose=False  # Set to True for debugging
+                        )
+                    else:
+                        st.error("LangChain not available. Please install dependencies: `pip install -r requirements.txt`")
+                        return
                 
                 # Chat input fixed at the bottom
                 if prompt := st.chat_input("Ask me about YOUR cluster (VMs, pods, resources)..."):
@@ -2011,24 +2031,14 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                             # Build cluster context from cached data
                             cluster_context = build_cluster_context()
                             
-                            # Build conversation history for context
-                            full_history = st.session_state.get('historical_context', []) + st.session_state.chat_history
-                            conversation_context = ""
-                            if len(full_history) > 1:
-                                conversation_context = "\n\n=== PREVIOUS CONVERSATION ===\n"
-                                recent_history = full_history[-20:] if len(full_history) > 20 else full_history
-                                for msg in recent_history:
-                                    role = "User" if msg["role"] == "user" else "Assistant"
-                                    conversation_context += f"{role}: {msg['content'][:200]}...\n"
-                            
-                            # Use the agent to answer the question!
+                            # Use the LangChain agent to answer the question!
                             response_placeholder.markdown("🔄 **Analyzing and executing tools...**")
-                            ai_response = st.session_state.k8s_agent.answer_question(
+                            result = st.session_state.k8s_agent.answer_question(
                                 question=prompt,
-                                cluster_context=cluster_context,
-                                conversation_history=conversation_context,
-                                api_key=api_key
+                                cluster_context=cluster_context
                             )
+                            
+                            ai_response = result.get("answer", "No response generated.")
                             
                             # Display final response (replaces progress indicators)
                             response_placeholder.markdown(ai_response)

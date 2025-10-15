@@ -1,6 +1,143 @@
-# Kubernetes Cluster Host Validator
+K8s AI Project/
+├── 📁 app/                          ✅ GOOD - Application code
+│   └── dashboard.py
+├── 📁 core/                         ✅ GOOD - Business logic
+│   ├── __init__.py
+│   └── system.py
+├── 📁 tests/                        ✅ GOOD - All test files organized
+│   ├── test_system.py
+│   ├── test_windows.py
+│   ├── test-pod.yaml
+│   └── vm_specs.sh                  (moved here)
+├── 📁 docs/                         ✅ EXCELLENT - Documentation organized!
+│   ├── README.md
+│   ├── STATUS.md
+│   ├── plan.md
+│   ├── file-purpose.md
+│   ├── AUTO_REFRESH_GUIDE.md
+│   └── POD_MANAGER_GUIDE.md
+├── 📁 .github/                      ✅ GOOD - AI instructions
+│   ├── copilot-instructions.md
+│   ├── claude-instructions.md
+│   └── gemini-instructions.md
+├── 🔧 keep-tunnel-alive.sh          ✅ GOOD - K8s tunnel scripts (root level OK)
+├── 🔧 restart-k8s-tunnel.sh         ✅ GOOD
+├── 📝 requirements.txt              ✅ CRITICAL - Must stay at root
+├── 📝 .env.example                  ✅ GOOD - Config template
+├── 📝 streamlit.log                 ⚠️ Log file (can delete)
+└── 📝 tunnel-monitor.log            ⚠️ Log file (can delete)
 
-A Streamlit web application that checks whether a remote server meets the minimum requirements to join a Kubernetes cluster via SSH.
+
+
+
+
+# Kubernetes AI-Powered Cluster Manager
+
+A Streamlit web application that validates hosts, monitors VMs, manages pods, and provides an AI assistant for your Kubernetes cluster.
+
+## 🔄 System Architecture & Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE (Streamlit)                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────────────────┐   │
+│  │   Host   │  │    VM    │  │   Pod    │  │     AI Assistant        │   │
+│  │Validator │  │  Status  │  │ Monitor  │  │  (Gemini 2.0 Flash)     │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────────┬─────────────┘   │
+└───────┼─────────────┼─────────────┼────────────────────┼─────────────────┘
+        │             │             │                    │
+        │             │             │         ┌──────────▼──────────┐
+        │             │             │         │   AI Agent Engine   │
+        │             │             │         │ ┌─────────────────┐ │
+        │             │             │         │ │ 1. Planning     │ │
+        │             │             │         │ │ 2. Tool Exec    │ │
+        │             │             │         │ │ 3. Synthesis    │ │
+        │             │             │         │ └─────────────────┘ │
+        │             │             │         └──────────┬──────────┘
+        │             │             │                    │
+        ▼             ▼             ▼                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                      EXECUTION LAYER (Python Core)                         │
+│  ┌──────────────┐   ┌─────────────┐   ┌─────────────────────────────┐    │
+│  │  Paramiko    │   │   GCloud    │   │    5 AI Tools               │    │
+│  │  SSH Client  │   │     CLI     │   │ • get_cluster_resources     │    │
+│  └──────┬───────┘   └──────┬──────┘   │ • describe_resource         │    │
+│         │                  │          │ • get_pod_logs              │    │
+│         │                  │          │ • check_node_health         │    │
+│         │                  │          │ • check_cluster_health      │    │
+│         │                  │          └──────────┬──────────────────┘    │
+└─────────┼──────────────────┼─────────────────────┼────────────────────────┘
+          │                  │                     │
+          │                  │                     │
+          ▼                  ▼                     ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    INFRASTRUCTURE LAYER                                    │
+│  ┌────────────────┐      ┌──────────────────────────────────────┐         │
+│  │  Direct SSH    │      │      Google Cloud Platform           │         │
+│  │  Target Hosts  │      │  ┌────────────────────────────────┐  │         │
+│  └────────────────┘      │  │  Kubernetes Cluster (GKE)      │  │         │
+│                          │  │  ┌──────────────────────────┐  │  │         │
+│                          │  │  │  k8s-master-001 (Master) │  │  │         │
+│                          │  │  │  • kubectl commands      │  │  │         │
+│                          │  │  │  • API Server           │  │  │         │
+│                          │  │  └──────────────────────────┘  │  │         │
+│                          │  │  ┌──────────────────────────┐  │  │         │
+│                          │  │  │  k8s-worker-01 (Worker)  │  │  │         │
+│                          │  │  │  • Pod Workloads        │  │  │         │
+│                          │  │  │  • Resource Metrics     │  │  │         │
+│                          │  │  └──────────────────────────┘  │  │         │
+│                          │  └────────────────────────────────┘  │         │
+│                          └──────────────────────────────────────┘         │
+└────────────────────────────────────────────────────────────────────────────┘
+
+                                    ▲  ▼
+                          ┌─────────────────────┐
+                          │   Google Gemini API │
+                          │   (AI Processing)   │
+                          └─────────────────────┘
+```
+
+## 📊 Data Flow Example: AI Assistant Query
+
+```
+User: "Compare master and worker node taints"
+   │
+   ▼
+┌─────────────────────────────────────────────────────┐
+│ PHASE 1: Planning (Gemini AI)                      │
+│ → Selects tools: describe_resource × 2             │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│ PHASE 2: Execution                                  │
+│ Tool 1: kubectl describe node k8s-master-001        │
+│   └→ SSH → Master → Returns taints/conditions      │
+│ Tool 2: kubectl describe node k8s-worker-01         │
+│   └→ SSH → Worker → Returns taints/conditions      │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│ PHASE 3: Synthesis (Gemini AI)                     │
+│ → Analyzes both results                            │
+│ → Creates comparison table                         │
+│ → Returns natural language answer                  │
+└─────────────────────┬───────────────────────────────┘
+                      ▼
+              User sees answer
+```
+
+## 🛠️ Technology Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Streamlit | Web UI framework |
+| **Backend** | Python 3.10+ | Core logic |
+| **SSH** | Paramiko | Remote server access |
+| **Cloud** | GCloud CLI | Google Cloud integration |
+| **Orchestration** | Kubernetes | Container management |
+| **AI** | Google Gemini 2.0 Flash | Intelligent query processing |
+| **Configuration** | python-dotenv | Environment management |
+| **Testing** | Pytest | Unit & integration tests |
 
 ## Features
 
