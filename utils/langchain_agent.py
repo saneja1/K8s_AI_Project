@@ -48,14 +48,28 @@ Your capabilities:
 - View pod status, logs, and resource usage
 - Analyze cluster health and provide recommendations
 
+CRITICAL RULES FOR TOOL USAGE:
+- **ALWAYS call tools ONE AT A TIME** - Never make multiple tool calls in a single response
+- When asked about multiple resources (e.g., "check master and worker nodes"), call the tool once, get the result, then call it again for the next resource
+- Wait for each tool response before making the next tool call
+- This prevents errors with parallel function execution
+
+IMPORTANT - BE PROACTIVE:
+- **DO NOT ask for permission** to use tools - just use them!
+- **DO NOT ask clarifying questions** if you can figure it out - just get the data!
+- When asked "How many pods are in each namespace?", immediately call get_cluster_resources with resource_type='pods' and analyze the results
+- When asked about multiple resources, check them sequentially without asking
+- Process and analyze the data yourself - count, filter, group as needed
+- Only ask clarifying questions if the request is genuinely ambiguous
+
 Guidelines:
 - Use the provided tools to gather accurate, live data
 - Provide clear, concise answers based on actual cluster state
-- When comparing resources, use multiple tool calls to get complete information
-- Format output clearly with headers and bullet points when appropriate
+- Format output clearly with headers, bullet points, or tables when appropriate
 - If a tool fails, explain what went wrong and suggest alternatives
+- Be direct and action-oriented - users want answers, not questions
 
-Remember: You have direct access to the live Kubernetes cluster - use your tools to get accurate information!"""
+Remember: You have direct access to the live Kubernetes cluster - use your tools proactively and sequentially to get accurate information!"""
         
         # Create prompt template with only 'input' variable
         self.prompt = ChatPromptTemplate.from_messages([
@@ -79,16 +93,17 @@ Remember: You have direct access to the live Kubernetes cluster - use your tools
             prompt=self.prompt
         )
         
-        # Create executor
+        # Create executor with early_stopping_method to prevent parallel issues
         self.executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
             memory=self.memory,
             verbose=self.verbose,
             handle_parsing_errors=True,
-            max_iterations=5,  # Prevent infinite loops
-            max_execution_time=60,  # 60 second timeout
-            return_intermediate_steps=True
+            max_iterations=10,  # Allow more iterations for sequential tool calls
+            max_execution_time=120,  # Increase timeout for multiple tool calls
+            return_intermediate_steps=True,
+            early_stopping_method="generate"  # Helps with function calling issues
         )
     
     def answer_question(self, question: str, cluster_context: str = "") -> dict:
@@ -119,6 +134,20 @@ Remember: You have direct access to the live Kubernetes cluster - use your tools
                 "intermediate_steps": result.get("intermediate_steps", []),
                 "success": True
             }
+            
+        except ValueError as ve:
+            # Handle function calling errors specifically
+            if "function response parts" in str(ve) or "function call parts" in str(ve):
+                error_msg = "I encountered an issue with parallel tool execution. Let me try a different approach.\n\n"
+                error_msg += "Please try rephrasing your question to focus on one resource at a time, "
+                error_msg += "or I can check resources sequentially if you ask again."
+                return {
+                    "answer": error_msg,
+                    "intermediate_steps": [],
+                    "success": False,
+                    "error": str(ve)
+                }
+            raise  # Re-raise if it's a different ValueError
             
         except Exception as e:
             error_msg = f"Sorry, I encountered an error: {str(e)}\n\nI'll try to help based on cached data instead."
