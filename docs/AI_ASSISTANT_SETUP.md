@@ -63,7 +63,7 @@ nano .env
 
 ```bash
 cd "/mnt/c/Users/aneja/Desktop/K8s AI Project"
-source .lxvenv/bin/activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -76,7 +76,7 @@ This will install:
 ```bash
 # If dashboard is running, stop it (Ctrl+C)
 # Then restart:
-source .lxvenv/bin/activate
+source .venv/bin/activate
 streamlit run app/dashboard.py
 ```
 
@@ -130,7 +130,7 @@ nohup streamlit run app/dashboard.py > streamlit.log 2>&1 &
 
 **Solution:**
 ```bash
-source .lxvenv/bin/activate
+source .venv/bin/activate
 pip install google-generativeai
 ```
 

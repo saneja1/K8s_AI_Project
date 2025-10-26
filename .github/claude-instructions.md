@@ -1,16 +1,16 @@
 # Claude AI Assistant Instructions
 
 ## Virtual Environment Management
-ALWAYS use .lxvenv files for Python virtual environments.
+ALWAYS use .venv files for Python virtual environments.
 
-**BEFORE RUNNING ANY COMMAND MAKE SURE .LXVENV IS ACTIVATED**
+**BEFORE RUNNING ANY COMMAND MAKE SURE .VENV IS ACTIVATED**
 
 Always run commands with virtual environment activation:
 ```bash
-source .lxvenv/bin/activate && [your_command]
+source .venv/bin/activate && [your_command]
 ```
 
-Example: `source .lxvenv/bin/activate && streamlit run app/streamlit_app.py`
+Example: `source .venv/bin/activate && streamlit run app/streamlit_app.py`
 
 **NEVER**:
 - Run commands without virtual environment activated
@@ -59,7 +59,7 @@ MIN_DISK_GIB=6       # Free disk space in GiB on root filesystem
 ### Development Workflow
 ```bash
 # Activate environment first
-source .lxvenv/bin/activate
+source .venv/bin/activate
 
 # Start application
 streamlit run app/streamlit_app.py  # Available at localhost:8501

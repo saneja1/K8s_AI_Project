@@ -1,13 +1,19 @@
-streamlit>=1.36
-paramiko>=3.4
-python-dotenv>=1.0
-pandas>=2.0
-pytest>=8.0
-pytest-mock>=3.14
-google-generativeai>=0.3.0
-requests>=2.31.0
+streamlit
+paramiko
+python-dotenv
+pandas
+pytest
+pytest-mock
+google-generativeai
+requests
 
 # LangChain dependencies
-langchain>=0.1.0
-langchain-google-genai>=0.0.6
-langchain-community>=0.0.13
+langchain
+langchain-core
+langchain-google-genai
+langchain-anthropic
+langchain-community
+
+# LangGraph multi-agent system
+langgraph
+langgraph-supervisor

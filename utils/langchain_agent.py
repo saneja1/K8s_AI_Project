@@ -11,6 +11,13 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 
+# Import Claude support (optional - only used when llm_provider="claude")
+try:
+    from langchain_anthropic import ChatAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 
 class LangChainK8sAgent:
     """
@@ -180,3 +187,83 @@ def create_k8s_agent(tools: List, api_key: Optional[str] = None, verbose: bool =
         Initialized LangChainK8sAgent
     """
     return LangChainK8sAgent(tools=tools, api_key=api_key, verbose=verbose)
+
+
+def create_k8s_multiagent_system(api_key: Optional[str] = None, verbose: bool = False, llm_provider: str = "gemini"):
+    """
+    Create the complete 6-agent Kubernetes multi-agent system with supervisor.
+    
+    This is the main entry point for the Streamlit dashboard to create
+    the full multi-agent system with:
+    - 6 specialist agents (Health, Security, Resources, Monitor, Describe/Get, Operations)
+    - 1 supervisor agent for intelligent routing
+    
+    Args:
+        api_key: API key for the selected LLM provider (defaults to GOOGLE_API_KEY or ANTHROPIC_API_KEY env var)
+        verbose: Whether to show agent reasoning steps
+        llm_provider: Which LLM to use - "gemini" or "claude" (default: "gemini")
+    
+    Returns:
+        Supervisor agent (LangGraph CompiledGraph) that routes to all 6 specialists
+    """
+    # Import all agent creation functions
+    from agents.health_agent import create_health_agent
+    from agents.security_agent import create_security_agent
+    from agents.resources_agent import create_resources_agent
+    from agents.monitor_agent import create_monitor_agent
+    from agents.describe_get_agent import create_describe_get_agent
+    from agents.operations_agent import create_operations_agent
+    from agents.supervisor_agent import create_k8s_supervisor
+    
+    # Initialize LLM based on provider
+    if llm_provider.lower() == "claude":
+        if not ANTHROPIC_AVAILABLE:
+            raise ImportError("langchain-anthropic package not installed. Run: pip install langchain-anthropic")
+        
+        # Get API key
+        actual_api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+        if not actual_api_key:
+            raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.")
+        
+        # Initialize Claude LLM
+        llm = ChatAnthropic(
+            model="claude-3-5-sonnet-20241022",  # Latest Claude 3.5 Sonnet
+            anthropic_api_key=actual_api_key,
+            temperature=0.2,
+            max_tokens=4096
+        )
+    else:  # Default to Gemini
+        # Get API key
+        actual_api_key = api_key or os.getenv('GOOGLE_API_KEY')
+        if not actual_api_key:
+            raise ValueError("Google API key required. Set GOOGLE_API_KEY environment variable.")
+        
+        # Initialize Gemini LLM
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",  # Higher free tier: 1500 requests/day vs 50/day
+            google_api_key=actual_api_key,
+            temperature=0.2,
+            convert_system_message_to_human=True
+        )
+    
+    # Create all 6 specialist agents
+    health_agent = create_health_agent(llm, verbose=verbose)
+    security_agent = create_security_agent(llm, verbose=verbose)
+    resources_agent = create_resources_agent(llm, verbose=verbose)
+    monitor_agent = create_monitor_agent(llm, verbose=verbose)
+    describe_get_agent = create_describe_get_agent(llm, verbose=verbose)
+    operations_agent = create_operations_agent(llm, verbose=verbose)
+    
+    # Create supervisor that routes to all 6 agents
+    supervisor = create_k8s_supervisor(
+        llm_model=llm,  # Note: parameter is llm_model, not llm
+        health_agent=health_agent,
+        security_agent=security_agent,
+        resources_agent=resources_agent,
+        monitor_agent=monitor_agent,
+        describe_get_agent=describe_get_agent,
+        operations_agent=operations_agent
+    )
+    
+    # Compile the StateGraph into an executable workflow
+    return supervisor.compile()

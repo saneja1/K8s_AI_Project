@@ -10,8 +10,13 @@ import re
 import pickle
 from pathlib import Path
 
+# Track import time
+_IMPORT_START = time.time()
+
 # Load environment variables
+_BEFORE_DOTENV = time.time()
 load_dotenv()
+_AFTER_DOTENV = time.time()
 
 # Import Google Gemini AI
 try:
@@ -28,14 +33,34 @@ if parent_dir not in sys.path:
 from core.system import check_requirements, check_requirements_cloud
 from utils.gen_api import generate_content
 
-# Import LangChain components
-try:
-    from utils.langchain_agent import create_k8s_agent
-    from utils.langchain_tools import ALL_TOOLS
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_AVAILABLE = False
-    print("Warning: LangChain not available. Install with: pip install -r requirements.txt")
+# ============================================================================
+# DISABLED: LangChain Multi-Agent System
+# ============================================================================
+# Import LangChain components - LAZY LOADING for performance
+# These are only imported when AI Assistant tab is accessed
+LANGCHAIN_AVAILABLE = False  # DISABLED - Set to None to re-enable lazy loading
+
+def get_langchain_agent():
+    """Lazy load LangChain agent system only when needed."""
+    # DISABLED: Always return None
+    return None
+    
+    # Original code (commented out):
+    # global LANGCHAIN_AVAILABLE
+    # if LANGCHAIN_AVAILABLE is None:
+    #     try:
+    #         from utils.langchain_agent import create_k8s_multiagent_system
+    #         LANGCHAIN_AVAILABLE = True
+    #     except ImportError:
+    #         LANGCHAIN_AVAILABLE = False
+    #         st.error("⚠️ LangChain not available. Install with: pip install -r requirements.txt")
+    #         return None
+    # 
+    # if LANGCHAIN_AVAILABLE:
+    #     from utils.langchain_agent import create_k8s_multiagent_system
+    #     return create_k8s_multiagent_system
+    # return None
+# ============================================================================
 
 # Log file paths
 LOG_FILE = Path(__file__).parent.parent / '.logs' / 'command_logs.pkl'
@@ -143,7 +168,7 @@ if 'pod_data_status' not in st.session_state:
 
 # Initialize manual refresh state
 if 'manual_refresh' not in st.session_state:
-    st.session_state.manual_refresh = True
+    st.session_state.manual_refresh = False  # DISABLED: Do not auto-fetch data on startup
 if 'last_data_refresh_time' not in st.session_state:
     st.session_state.last_data_refresh_time = 0.0
 if 'vm_table_cache' not in st.session_state:
@@ -1103,24 +1128,39 @@ Your complete answer using ALL tool results:
             return f"Sorry, I encountered an error: {str(e)}\n\nI'll try to help based on cached data instead."
 
 def main():
+    # Track page load time
+    page_start_time = time.time()
+    
     st.set_page_config(
         page_title="AI Powered K8s Virtual Assistant",
         page_icon="🤖",
         layout="wide"
     )
+    
+    # Track startup time in session state
+    if 'dashboard_startup_time' not in st.session_state:
+        st.session_state.dashboard_startup_time = time.time()
+    
+    # Calculate times
+    dotenv_time = _AFTER_DOTENV - _BEFORE_DOTENV
+    import_time = st.session_state.dashboard_startup_time - _IMPORT_START
+    time_since_startup = time.time() - st.session_state.dashboard_startup_time
+    page_load_time = time.time() - page_start_time
 
-    current_time = time.time()
-    last_refresh = st.session_state.last_data_refresh_time or 0.0
-    should_refresh = False
-    
-    if st.session_state.manual_refresh or last_refresh == 0.0:
-        should_refresh = True
-    
     # Define cluster VM configuration
     vm_list = [
         {"name": "k8s-master-001", "zone": "us-central1-a", "role": "Master", "internal_ip": "10.128.0.6", "external_ip": "34.69.84.204"},
         {"name": "k8s-worker-01", "zone": "us-central1-a", "role": "Worker", "internal_ip": "10.128.0.7", "external_ip": "34.133.61.216"}
     ]
+    
+    # LAZY DATA LOADING: Only fetch data when manual refresh is triggered
+    # This prevents slow initial page loads
+    current_time = time.time()
+    last_refresh = st.session_state.last_data_refresh_time or 0.0
+    should_refresh = False
+    
+    if st.session_state.manual_refresh:
+        should_refresh = True
     
     if should_refresh:
         refresh_timestamp = datetime.now()
@@ -1559,13 +1599,67 @@ def main():
     # Title at the top
     st.markdown('<div class="main-header"><span style="font-size: 3.5rem;">🤖</span> AI Powered K8s Virtual Assistant</div>', unsafe_allow_html=True)
     
+    # Display load time metrics at the top
+    col_timer1, col_timer2, col_timer3, col_timer4 = st.columns([1, 1, 1, 1])
+    with col_timer1:
+        st.metric("📦 Import Time", f"{import_time:.2f}s", help="Time to import all Python modules")
+    
+    with col_timer2:
+        if time_since_startup < 60:
+            st.metric("⏱️ Uptime", f"{time_since_startup:.2f}s", help="Time since dashboard started")
+        else:
+            minutes = int(time_since_startup // 60)
+            seconds = int(time_since_startup % 60)
+            st.metric("⏱️ Uptime", f"{minutes}m {seconds}s", help="Time since dashboard started")
+    
+    with col_timer3:
+        st.metric("⚡ Page Render", f"{page_load_time*1000:.0f}ms", help="Time to render this page")
+    
+    with col_timer4:
+        if import_time > 5:
+            st.error(f"⚠️ Slow imports detected! ({import_time:.1f}s)")
+        elif time_since_startup < 2:
+            st.success("🚀 Fast loading!")
+        else:
+            st.info("✅ Ready")
+    
+    # DEBUG: Show detailed timing breakdown
+    with st.expander("🔍 Detailed Performance Breakdown"):
+        st.write(f"**Environment loading (.env):** {dotenv_time*1000:.2f}ms")
+        st.write(f"**Total import time:** {import_time:.3f}s")
+        st.write(f"**Dashboard uptime:** {time_since_startup:.3f}s")
+        st.write(f"**Current page render:** {page_load_time*1000:.2f}ms")
+        st.write(f"**Manual refresh enabled:** {st.session_state.manual_refresh}")
+        st.write(f"**VM data timestamp:** {st.session_state.vm_data_timestamp}")
+        st.write(f"**Pod data timestamp:** {st.session_state.pod_data_timestamp}")
+        
+        # Show what operations are active
+        st.markdown("**Feature Status:**")
+        st.write(f"- {'✅' if GEMINI_AVAILABLE else '❌'} Google Gemini AI: {'ENABLED' if GEMINI_AVAILABLE else 'DISABLED'}")
+        
+        # Check LangChain status
+        langchain_status = "NOT LOADED YET (lazy loading)"
+        if LANGCHAIN_AVAILABLE is True:
+            langchain_status = "ENABLED & LOADED"
+        elif LANGCHAIN_AVAILABLE is False:
+            langchain_status = "DISABLED (import failed)"
+        st.write(f"- {'✅' if LANGCHAIN_AVAILABLE else '⏳'} LangChain Multi-Agent System: {langchain_status}") 
+        
+        st.write(f"- {'✅' if st.session_state.manual_refresh else '❌'} VM Data Fetching: {'ACTIVE' if st.session_state.manual_refresh else 'DISABLED (manual only)'}")
+        st.write(f"- {'✅' if st.session_state.manual_refresh else '❌'} Pod Data Fetching: {'ACTIVE' if st.session_state.manual_refresh else 'DISABLED (manual only)'}")
+        st.write(f"- ❌ Auto-refresh: DISABLED (manual only)")
+    
+    st.markdown("---")
+    
     # Navigation and buttons in same row - aligned
     col_nav, col_spacer, col_button = st.columns([3, 0.5, 0.5])
     
     with col_nav:
         page = st.radio(
             "",
-            ["🤖 AI Assistant", "📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"],
+            # AI Assistant tab DISABLED due to agent system issues
+            # ["🤖 AI Assistant", "📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"],
+            ["📋 Host Validator", "🖥️ VM Status", "🚀 Pod Monitor"],
             index=0,
             label_visibility="collapsed",
             horizontal=True
@@ -1727,6 +1821,10 @@ def main():
         st.markdown('<div class="section-header">🖥️ VM Status & Resources</div>', unsafe_allow_html=True)
         
         st.write("Monitor your GCP VMs and their resources")
+        
+        # Auto-refresh on first visit to this tab
+        if not vm_table_data or len(vm_table_data) == 0:
+            st.info("⏳ No cached data available. Click 'Refresh' to fetch VM metrics.")
 
         if vm_table_data:
             # Show indicator using cached status
@@ -1821,6 +1919,10 @@ def main():
         st.markdown('<div class="section-header">🚀 Pod Monitor</div>', unsafe_allow_html=True)
         
         st.write("Monitor pods across your Kubernetes cluster")
+        
+        # Auto-refresh message on first visit
+        if not pods_data or len(pods_data) == 0:
+            st.info("⏳ No cached data available. Click 'Refresh' to fetch pod data from cluster.")
         
         pod_indicator = get_live_indicator_html('pod')
         if pods_data:
@@ -1974,6 +2076,28 @@ def main():
                 # K8s logo URL
                 k8s_avatar = "https://raw.githubusercontent.com/kubernetes/kubernetes/master/logo/logo.png"
                 
+                # LLM Provider Selector - MOVED TO TOP for better UX
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    llm_provider = st.selectbox(
+                        "🤖 Select LLM Provider:",
+                        options=["Gemini (Google)", "Claude (Anthropic)"],
+                        index=0,
+                        key="llm_provider_selector",
+                        help="Switch between Gemini (GOOGLE_API_KEY) and Claude (ANTHROPIC_API_KEY)",
+                        label_visibility="collapsed"
+                    )
+                    # Extract provider name (gemini or claude)
+                    provider_name = "claude" if "Claude" in llm_provider else "gemini"
+                
+                with col2:
+                    if provider_name == "claude":
+                        st.info("💡 Using **Claude (Anthropic)** - Make sure ANTHROPIC_API_KEY is set in .env")
+                    else:
+                        st.info("💡 Using **Gemini**: gemini-1.5-flash (1500 req/day free tier)")
+                
+                st.markdown("---")
+                
                 # Display welcome message if no chat history
                 if not st.session_state.chat_history:
                     with st.chat_message("assistant", avatar=k8s_avatar):
@@ -1981,17 +2105,28 @@ def main():
                         vm_count = len(st.session_state.get('vm_table_cache', []))
                         pod_count = len(st.session_state.get('pods_cache', []))
                         
-                        welcome_msg = f"""👋 **Hi! I'm your Kubernetes AI Assistant with LIVE cluster access!**
+                        welcome_msg = f"""👋 **Hi! I'm your Kubernetes AI Assistant powered by a 6-Agent Multi-Agent System!**
+
+**🤖 How I Work:**
+I use 6 specialized AI agents working together:
+- **Health Agent** - Node health, conditions, readiness
+- **Security Agent** - RBAC, secrets, network policies  
+- **Resources Agent** - CPU, memory, quotas, requests/limits
+- **Monitor Agent** - Events, troubleshooting, diagnostics
+- **Describe/Get Agent** - Resource descriptions, listings
+- **Operations Agent** - Create, delete, scale operations (with confirmations)
 
 **Ask me anything about your cluster:**
 - Node status, taints, labels, configurations
 - Pod details, logs, deployments, services
 - Resource usage, capacity, health checks
-- Any Kubernetes-related questions
+- Security policies, permissions, secrets
+- Troubleshooting and diagnostics
+- Any Kubernetes operations
 
-I can access your cluster in real-time via SSH/kubectl or use cached monitoring data for quick answers!
+I intelligently route your question to the right specialist agent(s) and can access your cluster in real-time via SSH/kubectl!
 
-*💡 Tip: Visit VM Status and Pod Monitor tabs first to populate cached data.*"""
+*💡 Tip: Visit VM Status and Pod Monitor tabs first to populate cached data for faster answers.*"""
                         
                         st.markdown(welcome_msg)
                 
@@ -2001,14 +2136,35 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                     with st.chat_message(message["role"], avatar=avatar):
                         st.markdown(message["content"])
                 
-                # Initialize the LangChain agent once (reuse across questions)
+                # Initialize the 6-agent multi-agent system once (reuse across questions)
+                # Reset agent if provider changed
+                if 'current_llm_provider' not in st.session_state:
+                    st.session_state.current_llm_provider = provider_name
+                elif st.session_state.current_llm_provider != provider_name:
+                    st.session_state.current_llm_provider = provider_name
+                    if 'k8s_agent' in st.session_state:
+                        del st.session_state.k8s_agent  # Force re-initialization with new provider
+                
                 if 'k8s_agent' not in st.session_state:
-                    if LANGCHAIN_AVAILABLE:
-                        st.session_state.k8s_agent = create_k8s_agent(
-                            tools=ALL_TOOLS,
-                            api_key=api_key,
-                            verbose=False  # Set to True for debugging
-                        )
+                    # Lazy load LangChain system only when AI Assistant tab is accessed
+                    create_agent_fn = get_langchain_agent()
+                    if create_agent_fn:
+                        with st.spinner(f"🔧 Initializing 6-agent AI system with {llm_provider}... (This may take 10-20 seconds on first load)"):
+                            try:
+                                st.session_state.k8s_agent = create_agent_fn(
+                                    api_key=api_key,
+                                    verbose=False,  # Set to True for debugging
+                                    llm_provider=provider_name
+                                )
+                                st.success("✅ AI system initialized successfully!")
+                            except Exception as e:
+                                st.error(f"❌ Failed to initialize AI system: {str(e)}")
+                                st.info("**Possible fixes:**\n"
+                                       "1. Check your API key is valid in `.env` file\n"
+                                       "2. Verify internet connection\n"
+                                       "3. Try reloading the page\n"
+                                       "4. Check logs: `tail -50 streamlit.log`")
+                                return
                     else:
                         st.error("LangChain not available. Please install dependencies: `pip install -r requirements.txt`")
                         return
@@ -2031,14 +2187,23 @@ I can access your cluster in real-time via SSH/kubectl or use cached monitoring 
                             # Build cluster context from cached data
                             cluster_context = build_cluster_context()
                             
-                            # Use the LangChain agent to answer the question!
-                            response_placeholder.markdown("🔄 **Analyzing and executing tools...**")
-                            result = st.session_state.k8s_agent.answer_question(
-                                question=prompt,
-                                cluster_context=cluster_context
-                            )
+                            # Prepare the question with context
+                            enhanced_question = f"Context about current cluster state:\n{cluster_context[:500]}\n\nUser question: {prompt}"
                             
-                            ai_response = result.get("answer", "No response generated.")
+                            # Use the multi-agent supervisor to answer the question!
+                            response_placeholder.markdown("🔄 **Routing to specialist agents and executing tools...**")
+                            
+                            # Invoke the supervisor (LangGraph agent)
+                            result = st.session_state.k8s_agent.invoke({
+                                "messages": [{"role": "user", "content": enhanced_question}]
+                            })
+                            
+                            # Extract the final response from messages
+                            if result and "messages" in result:
+                                messages = result["messages"]
+                                ai_response = messages[-1].content if messages else "No response generated."
+                            else:
+                                ai_response = "No response generated."
                             
                             # Display final response (replaces progress indicators)
                             response_placeholder.markdown(ai_response)

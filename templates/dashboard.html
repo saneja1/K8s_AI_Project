@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Powered K8s Virtual Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .load-time {
+            background: rgba(255,255,255,0.2);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+            padding: 0 20px;
+        }
+        .tab {
+            padding: 20px 30px;
+            cursor: pointer;
+            text-decoration: none;
+            color: #495057;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+        .tab:hover {
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+        .content {
+            padding: 40px;
+            min-height: 500px;
+        }
+        .content h2 {
+            color: #2a5298;
+            margin-bottom: 20px;
+            font-size: 2rem;
+        }
+        .content p {
+            color: #6c757d;
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .metric-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 600px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            min-width: 800px;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            table-layout: fixed;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            text-align: left;
+            padding: 16px;
+            border: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            white-space: nowrap;
+        }
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #e9ecef;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        tr:hover {
+            background: linear-gradient(90deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+            transition: background 0.2s;
+        }
+        tbody tr {
+            transition: all 0.2s;
+        }
+        tbody tr:hover {
+            transform: scale(1.002);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .status-badge::before {
+            content: '●';
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+        .status-running {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            color: #155724;
+            border: 1px solid #b1dfbb;
+        }
+        .status-failed {
+            background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+            color: #721c24;
+            border: 1px solid #f1b0b7;
+        }
+        .status-pending {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+            color: #856404;
+            border: 1px solid #ffd93d;
+        }
+        .namespace-tag {
+            background: linear-gradient(135deg, #e7f3ff 0%, #d6eaff 100%);
+            color: #0066cc;
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid #b3d9ff;
+            display: inline-block;
+            white-space: nowrap;
+        }
+        .alert {
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+        .refresh-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(102, 126, 234, 0.5);
+        }
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #f8f9fa;
+        }
+        td {
+            font-size: 0.95rem;
+        }
+        td:first-child {
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI Powered K8s Virtual Assistant</h1>
+            <div class="load-time">⚡ Loaded in {{ "%.2f"|format(load_time) }} ms</div>
+        </div>
+        
+        <div class="tabs">
+            <a href="/ai_llm" class="tab {% if active_page == 'ai_llm' %}active{% endif %}">🤖 AI LLM</a>
+            <a href="/host_validator" class="tab {% if active_page == 'host_validator' %}active{% endif %}">📋 Host Validator</a>
+            <a href="/vm_status" class="tab {% if active_page == 'vm_status' %}active{% endif %}">🖥️ VM Status</a>
+            <a href="/pod_monitor" class="tab {% if active_page == 'pod_monitor' %}active{% endif %}">🚀 Pod Monitor</a>
+        </div>
+        
+        <div class="content">
+            {% if active_page == 'ai_llm' %}
+                <h2>🤖 AI LLM</h2>
+                <p>AI Language Model interface for Kubernetes management.</p>
+            {% elif active_page == 'host_validator' %}
+                <h2>📋 Host Validator</h2>
+                <p>Validate remote hosts for Kubernetes cluster requirements.</p>
+            {% elif active_page == 'vm_status' %}
+                <h2>🖥️ VM Status</h2>
+                <p>Monitor virtual machine resources and health status.</p>
+            {% elif active_page == 'pod_monitor' %}
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">🚀 Pod Monitor</h2>
+                    <button onclick="location.reload()" class="refresh-btn">🔄 Refresh</button>
+                </div>
+                <p>Monitor pods across your Kubernetes cluster</p>
+                
+                {% if pods %}
+                    <div class="metrics">
+                        <div class="metric-card">
+                            <div class="metric-value">{{ pods|length }}</div>
+                            <div class="metric-label">Total Pods</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">{{ pods|selectattr('status', 'equalto', 'Running')|list|length }}</div>
+                            <div class="metric-label">Running</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">{{ pods|selectattr('status', 'equalto', 'Pending')|list|length }}</div>
+                            <div class="metric-label">Pending</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">{{ pods|selectattr('status', 'equalto', 'Failed')|list|length }}</div>
+                            <div class="metric-label">Failed</div>
+                        </div>
+                    </div>
+                    
+                    <h3 style="margin-top: 30px; margin-bottom: 15px; color: #2a5298;">Pod Details</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 120px;">Status</th>
+                                    <th style="width: 30%;">Name</th>
+                                    <th style="width: 150px;">Namespace</th>
+                                    <th style="width: 25%;">Node</th>
+                                    <th style="width: 80px; text-align: center;">Ready</th>
+                                    <th style="width: 80px; text-align: center;">Restarts</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pod in pods %}
+                                <tr>
+                                    <td style="width: 120px;">
+                                        {% if pod.status == 'Running' %}
+                                            <span class="status-badge status-running">Running</span>
+                                        {% elif pod.status == 'Failed' %}
+                                            <span class="status-badge status-failed">Failed</span>
+                                        {% elif pod.status == 'Pending' %}
+                                            <span class="status-badge status-pending">Pending</span>
+                                        {% else %}
+                                            <span class="status-badge">{{ pod.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="width: 30%; word-break: break-word; font-family: 'Courier New', monospace; font-size: 0.9rem;">{{ pod.name }}</td>
+                                    <td style="width: 150px;"><span class="namespace-tag">{{ pod.namespace }}</span></td>
+                                    <td style="width: 25%; word-break: break-word; font-size: 0.9rem;">{{ pod.node }}</td>
+                                    <td style="width: 80px; text-align: center; font-weight: 600;">{{ pod.ready }}</td>
+                                    <td style="width: 80px; text-align: center; font-weight: 600;">{{ pod.restarts }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        <strong>ℹ️ No pod data available</strong><br>
+                        Make sure kubectl is configured and your cluster is running.
+                    </div>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

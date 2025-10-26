@@ -13,7 +13,7 @@ K8s AI Project/
 ├── tests/                        # Unit tests
 ├── .github/                      # AI assistant instructions
 ├── .logs/                        # Runtime application logs
-├── .lxvenv/                      # Python virtual environment (Linux)
+├── .venv/                      # Python virtual environment
 ├── .vscode/                      # VS Code workspace settings
 ├── .pytest_cache/                # Pytest cache files
 ├── .git/                         # Git repository data
@@ -197,13 +197,13 @@ K8s AI Project/
 
 ## 🗂️ DIRECTORIES
 
-### **.lxvenv/** (Python virtual environment)
+### **.venv/** (Python virtual environment)
 - **Purpose**: Isolated Python environment with all dependencies
 - **Size**: ~100-500 MB
 - **Safe to delete?**: ⚠️ **YES, BUT MUST RECREATE**
-- **Impact if deleted**: App won't run until you recreate with `python -m venv .lxvenv`
+- **Impact if deleted**: App won't run until you recreate with `python -m venv .venv`
 - **Recommendation**: Keep unless you need to clean up space
-- **Regeneration**: `python -m venv .lxvenv && source .lxvenv/bin/activate && pip install -r requirements.txt`
+- **Regeneration**: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
 
 ### **.logs/** (Runtime logs)
 - **Purpose**: Application runtime logs directory
@@ -369,7 +369,7 @@ echo "✅ Aggressive cleanup complete!"
 3. `core/__init__.py` - Python package file
 4. `requirements.txt` - Dependency list
 5. `.gitignore` - Security critical
-6. `.lxvenv/` - Unless you want to reinstall everything
+6. `.venv/` - Unless you want to reinstall everything
 
 ---
 

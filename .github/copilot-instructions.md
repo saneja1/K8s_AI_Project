@@ -10,7 +10,7 @@ These are the prime rules which needs to be followed by you in all conditions:
 Also, make sure you follow these below instructions:
 
 Always use .venv files for Python virtual environments.
-root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .lxvenv/bin/activate
+root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .venv/bin/activate
 
 never run any command if virtual environment is not activated.
 
@@ -21,7 +21,7 @@ do not create more than 3 terminals at a time.
 BEFORE RUNNING ANY COMMAND MAKE SURE .VENV IS ACTIVATED
 
 Always run command with also including activation of .venv
-example: root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .lxvenv/bin/activate && streamlit run app/streamlit_app.py
+example: root@SALaptop:/mnt/c/Users/aneja/Desktop/K8s AI Project# source .venv/bin/activate && streamlit run app/streamlit_app.py
 
 GOOGLE CLOUD PROJECT CONFIGURATION:
 - Always use project: beaming-age-463822-k7
