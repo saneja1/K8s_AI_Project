@@ -1,7 +1,121 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, jsonify
 import datetime
+import subprocess
+import json
 
 app = Flask(__name__)
+
+# VM Configuration - from dashboard.py
+VM_LIST = [
+    {"name": "k8s-master-001", "zone": "us-central1-a", "role": "Master", "internal_ip": "10.128.0.6", "external_ip": "34.69.84.204"},
+    {"name": "k8s-worker-01", "zone": "us-central1-a", "role": "Worker", "internal_ip": "10.128.0.7", "external_ip": "34.133.61.216"}
+]
+
+# Constants
+MIB_PER_GIB = 1024
+
+# Global command logs storage
+command_logs = []
+
+def log_command(command, status="Running", details=""):
+    """Log a command execution with timestamp."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = {
+        'timestamp': timestamp,
+        'command': command,
+        'status': status,
+        'details': details
+    }
+    command_logs.append(log_entry)
+    
+    # Keep only last 50 logs
+    if len(command_logs) > 50:
+        command_logs[:] = command_logs[-50:]
+
+def parse_int(value):
+    """Safely parse integers from string values."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+def parse_float(value):
+    """Safely parse floats from string values."""
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+def format_gib(value_mib):
+    """Convert MiB value to GiB string with one decimal place."""
+    if value_mib is None:
+        return 'N/A'
+    gib = value_mib / MIB_PER_GIB
+    if abs(gib) < 0.05:
+        gib = 0.0
+    return f"{gib:.1f}"
+
+def format_percent(value):
+    """Format a float percentage with one decimal place."""
+    if value is None:
+        return 'N/A'
+    clamped = max(0.0, min(100.0, value))
+    if clamped < 0.05:
+        clamped = 0.0
+    return f"{clamped:.1f}%"
+
+def get_vm_resources(vm_name, zone="us-central1-a"):
+    """Get detailed system resources from a VM using SSH."""
+    try:
+        log_command(f"gcloud compute ssh {vm_name}", "Running", f"Fetching metrics from {vm_name}")
+        
+        combined_command = (
+            "CPU_COUNT=$(nproc); "
+            "read MEM_TOTAL MEM_USED MEM_FREE MEM_AVAIL <<< $(free -m | awk 'NR==2 {print $2, $3, $4, $7}'); "
+            "read DISK_TOTAL DISK_USED DISK_AVAIL <<< $(df -BM / | tail -1 | awk '{print int($2), int($3), int($4)}'); "
+            "CPU_IDLE=$(top -bn1 | awk '/Cpu\\(s\\)/ {print $8}' | sed 's/[^0-9.]//g'); "
+            "echo CPU_COUNT:${CPU_COUNT}; "
+            "echo MEM_TOTAL_MIB:${MEM_TOTAL}; "
+            "echo MEM_USED_MIB:${MEM_USED}; "
+            "echo MEM_FREE_MIB:${MEM_FREE}; "
+            "echo MEM_AVAIL_MIB:${MEM_AVAIL}; "
+            "echo DISK_TOTAL_MIB:${DISK_TOTAL}; "
+            "echo DISK_USED_MIB:${DISK_USED}; "
+            "echo DISK_AVAIL_MIB:${DISK_AVAIL}; "
+            "echo CPU_IDLE_PERCENT:${CPU_IDLE}"
+        )
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", vm_name,
+            "--command", combined_command,
+            "--zone", zone,
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15)
+        
+        vm_resources = {'vm_name': vm_name, 'zone': zone}
+        
+        if result.returncode == 0:
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    vm_resources[key] = value
+            
+            log_command(f"gcloud compute ssh {vm_name}", "✅ Success", f"Retrieved all metrics from {vm_name}")
+            return vm_resources
+        else:
+            error_msg = result.stderr[:200] if result.stderr else "Unknown error"
+            log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Error: {error_msg}")
+            return {'vm_name': vm_name, 'zone': zone, 'error': error_msg}
+            
+    except subprocess.TimeoutExpired:
+        log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", "Timeout after 15 seconds")
+        return {'vm_name': vm_name, 'zone': zone, 'error': 'Timeout after 15 seconds'}
+    except Exception as e:
+        log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Exception: {str(e)}")
+        return {'vm_name': vm_name, 'zone': zone, 'error': str(e)}
 
 # HTML template for the dashboard
 dashboard_template = """
@@ -368,23 +482,98 @@ def host_validator():
 
 @app.route('/vm-status')
 def vm_status():
-    content = """
+    # Get VM data
+    vm_table_data = []
+    total_vms = len(VM_LIST)
+    active_vms = 0
+    error_vms = 0
+    
+    for vm_config in VM_LIST:
+        vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
+        
+        if 'error' not in vm_resources:
+            active_vms += 1
+            cpu_count_val = parse_int(vm_resources.get('CPU_COUNT'))
+            cpu_idle_percent = parse_float(vm_resources.get('CPU_IDLE_PERCENT'))
+            cpu_usage_val = None
+            if cpu_idle_percent is not None:
+                cpu_usage_val = 100.0 - cpu_idle_percent
+
+            mem_total_mib = parse_int(vm_resources.get('MEM_TOTAL_MIB'))
+            mem_used_mib = parse_int(vm_resources.get('MEM_USED_MIB'))
+            mem_free_mib = parse_int(vm_resources.get('MEM_FREE_MIB'))
+
+            disk_total_mib = parse_int(vm_resources.get('DISK_TOTAL_MIB'))
+            disk_used_mib = parse_int(vm_resources.get('DISK_USED_MIB'))
+
+            vm_data = {
+                'name': vm_config['name'],
+                'role': vm_config['role'],
+                'status': 'Running',
+                'internal_ip': vm_config['internal_ip'],
+                'external_ip': vm_config['external_ip'],
+                'cpu_cores': cpu_count_val if cpu_count_val is not None else 'N/A',
+                'cpu_usage': format_percent(cpu_usage_val),
+                'memory_total': format_gib(mem_total_mib),
+                'memory_used': format_gib(mem_used_mib),
+                'memory_free': format_gib(mem_free_mib),
+                'disk_total': format_gib(disk_total_mib),
+                'disk_used': format_gib(disk_used_mib)
+            }
+        else:
+            error_vms += 1
+            vm_data = {
+                'name': vm_config['name'],
+                'role': vm_config['role'],
+                'status': 'Error',
+                'internal_ip': vm_config['internal_ip'],
+                'external_ip': vm_config['external_ip'],
+                'cpu_cores': 'Error',
+                'cpu_usage': 'Error',
+                'memory_total': 'Error',
+                'memory_used': 'Error',
+                'memory_free': 'Error',
+                'disk_total': 'Error',
+                'disk_used': 'Error',
+                'error': vm_resources.get('error', 'Unknown error')
+            }
+        
+        vm_table_data.append(vm_data)
+    
+    # Generate table rows
+    table_rows = ""
+    for vm in vm_table_data:
+        status_indicator = 'status-online' if vm['status'] == 'Running' else 'status-offline'
+        memory_display = f"{vm['memory_used']}GB / {vm['memory_total']}GB" if vm['memory_used'] != 'Error' else 'Error'
+        
+        table_rows += f"""
+        <tr>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><strong>{vm['name']}</strong></td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator {status_indicator}"></span>{vm['status']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{vm['cpu_usage']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{memory_display}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{vm['role']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{vm['internal_ip']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{vm['external_ip']}</td>
+        </tr>"""
+    
+    content = f"""
     <h2>🖥️ Virtual Machine Status</h2>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
         <div style="padding: 20px; background: #f0fff4; border-radius: 8px; text-align: center;">
             <h3 style="color: #38a169;">Active VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #38a169; margin: 10px 0;">3</div>
+            <div style="font-size: 36px; font-weight: bold; color: #38a169; margin: 10px 0;">{active_vms}</div>
             <p style="color: #718096;">Currently Running</p>
         </div>
-        <div style="padding: 20px; background: #fffaf0; border-radius: 8px; text-align: center;">
-            <h3 style="color: #d69e2e;">Pending VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #d69e2e; margin: 10px 0;">1</div>
-            <p style="color: #718096;">Starting Up</p>
-        </div>
         <div style="padding: 20px; background: #fed7d7; border-radius: 8px; text-align: center;">
-            <h3 style="color: #e53e3e;">Offline VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #e53e3e; margin: 10px 0;">0</div>
-            <p style="color: #718096;">Not Responding</p>
+            <h3 style="color: #e53e3e;">Error VMs</h3>
+            <div style="font-size: 36px; font-weight: bold; color: #e53e3e; margin: 10px 0;">{error_vms}</div>
+            <p style="color: #718096;">Connection Issues</p>
+        </div>
+        <div style="padding: 20px; background: #ebf8ff; border-radius: 8px; text-align: center;">
+            <h3 style="color: #3182ce;">Total VMs</h3>
+            <div style="font-size: 36px; font-weight: bold; color: #3182ce; margin: 10px 0;">{total_vms}</div>
+            <p style="color: #718096;">Configured</p>
         </div>
     </div>
     
@@ -398,39 +587,119 @@ def vm_status():
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Status</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">CPU Usage</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Memory</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Uptime</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Role</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Internal IP</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">External IP</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><strong>k8s-master-01</strong></td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-online"></span>Running</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">45%</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">2.1GB / 4GB</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">2d 14h</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><strong>k8s-worker-01</strong></td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-online"></span>Running</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">32%</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">1.8GB / 4GB</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">2d 14h</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><strong>k8s-worker-02</strong></td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-online"></span>Running</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">28%</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">1.5GB / 4GB</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">2d 14h</td>
-                    </tr>
+                    {table_rows}
                 </tbody>
             </table>
         </div>
         <div style="margin-top: 20px; display: flex; gap: 15px; flex-wrap: wrap;">
-            <button class="card-button" style="width: auto; padding: 10px 20px;">Refresh Status</button>
-            <button class="card-button" style="width: auto; padding: 10px 20px;">Export Report</button>
+            <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="location.reload()">Refresh Status</button>
+            <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="downloadVMReport()">Export Report</button>
+            <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="clearLogs()">Clear Logs</button>
         </div>
     </div>
+    
+    <!-- Command Execution Logs Section -->
+    <div style="background: white; border-radius: 12px; padding: 30px; margin-top: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #2d3748; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">📋</span>
+                Command Execution Logs
+            </h3>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 15px;">
+                <div style="background: #f0f9ff; padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; color: #0369a1;">
+                    <strong>Total Commands:</strong> {len(command_logs)}
+                </div>
+                <div style="background: #f0fdf4; padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; color: #15803d;">
+                    <strong>Updated:</strong> {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                </div>
+            </div>
+        </div>
+        
+        <div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e5e7eb;">"""
+
+    # Generate logs table
+    if command_logs:
+        logs_html = """
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Timestamp</th>
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Command</th>
+                        <th style="padding: 12px 16px; text-align: center; font-weight: 600;">Status</th>
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Details</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+        
+        # Reverse logs to show newest first
+        for i, log in enumerate(reversed(command_logs)):
+            # Determine row styling based on status
+            if log['status'] == '✅ Success':
+                row_bg = '#f0fdf4' if i % 2 == 0 else '#dcfce7'
+                status_color = '#15803d'
+                status_bg = '#bbf7d0'
+            elif log['status'] == '❌ Failed':
+                row_bg = '#fef2f2' if i % 2 == 0 else '#fee2e2'
+                status_color = '#dc2626'
+                status_bg = '#fecaca'
+            else:  # Running
+                row_bg = '#fffbeb' if i % 2 == 0 else '#fef3c7'
+                status_color = '#d97706'
+                status_bg = '#fed7aa'
+            
+            logs_html += f"""
+                    <tr style="background: {row_bg}; transition: all 0.2s ease;">
+                        <td style="padding: 12px 16px; color: #6b7280; font-family: monospace;">{log['timestamp']}</td>
+                        <td style="padding: 12px 16px; color: #374151; font-family: monospace; font-weight: 500;">{log['command']}</td>
+                        <td style="padding: 12px 16px; text-align: center;">
+                            <span style="display: inline-block; padding: 4px 12px; border-radius: 20px; background: {status_bg}; color: {status_color}; font-weight: 600; font-size: 0.8rem;">
+                                {log['status']}
+                            </span>
+                        </td>
+                        <td style="padding: 12px 16px; color: #6b7280; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{log['details']}">{log['details']}</td>
+                    </tr>"""
+        
+        logs_html += """
+                </tbody>
+            </table>"""
+    else:
+        logs_html = """
+            <div style="text-align: center; padding: 40px; color: #6b7280;">
+                <div style="font-size: 3rem; margin-bottom: 16px;">📝</div>
+                <h4 style="color: #9ca3af; margin: 0;">No commands executed yet</h4>
+                <p style="color: #d1d5db; margin: 8px 0 0 0;">Command logs will appear here when VM status is refreshed</p>
+            </div>"""
+    
+    content += logs_html + """
+        </div>
+    </div>
+    
+    <script>
+    function downloadVMReport() {{
+        const data = {json.dumps(vm_table_data)};
+        const blob = new Blob([JSON.stringify(data, null, 2)], {{type: 'application/json'}});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'vm-status-report-{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }}
+    
+    function clearLogs() {{
+        fetch('/api/clear-logs', {{method: 'POST'}})
+            .then(() => location.reload())
+            .catch(err => console.error('Failed to clear logs:', err));
+    }}
+    </script>
     """
     return render_template_string(dashboard_template,
                                 title="VM Status - Kubernetes AI Dashboard",
@@ -527,6 +796,72 @@ def pod_monitor():
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/api/vm-data')
+def get_vm_data():
+    """API endpoint to get VM data as JSON for AJAX refresh."""
+    vm_data = []
+    
+    for vm_config in VM_LIST:
+        vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
+        
+        if 'error' not in vm_resources:
+            cpu_count_val = parse_int(vm_resources.get('CPU_COUNT'))
+            cpu_idle_percent = parse_float(vm_resources.get('CPU_IDLE_PERCENT'))
+            cpu_usage_val = None
+            if cpu_idle_percent is not None:
+                cpu_usage_val = 100.0 - cpu_idle_percent
+
+            mem_total_mib = parse_int(vm_resources.get('MEM_TOTAL_MIB'))
+            mem_used_mib = parse_int(vm_resources.get('MEM_USED_MIB'))
+            disk_total_mib = parse_int(vm_resources.get('DISK_TOTAL_MIB'))
+            disk_used_mib = parse_int(vm_resources.get('DISK_USED_MIB'))
+
+            vm_info = {
+                'name': vm_config['name'],
+                'role': vm_config['role'],
+                'status': 'Running',
+                'zone': vm_config['zone'],
+                'internal_ip': vm_config['internal_ip'],
+                'external_ip': vm_config['external_ip'],
+                'cpu_cores': cpu_count_val,
+                'cpu_usage_percent': cpu_usage_val,
+                'memory_total_gib': mem_total_mib / MIB_PER_GIB if mem_total_mib else None,
+                'memory_used_gib': mem_used_mib / MIB_PER_GIB if mem_used_mib else None,
+                'disk_total_gib': disk_total_mib / MIB_PER_GIB if disk_total_mib else None,
+                'disk_used_gib': disk_used_mib / MIB_PER_GIB if disk_used_mib else None,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+        else:
+            vm_info = {
+                'name': vm_config['name'],
+                'role': vm_config['role'],
+                'status': 'Error',
+                'zone': vm_config['zone'],
+                'internal_ip': vm_config['internal_ip'],
+                'external_ip': vm_config['external_ip'],
+                'error': vm_resources.get('error', 'Unknown error'),
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+        
+        vm_data.append(vm_info)
+    
+    return jsonify({
+        'vms': vm_data,
+        'summary': {
+            'total': len(VM_LIST),
+            'active': len([vm for vm in vm_data if vm['status'] == 'Running']),
+            'error': len([vm for vm in vm_data if vm['status'] == 'Error'])
+        },
+        'last_updated': datetime.datetime.now().isoformat()
+    })
+
+@app.route('/api/clear-logs', methods=['POST'])
+def clear_logs():
+    """API endpoint to clear command logs."""
+    global command_logs
+    command_logs.clear()
+    return jsonify({'status': 'success', 'message': 'Logs cleared'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=7000, debug=True)
