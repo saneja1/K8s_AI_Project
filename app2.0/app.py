@@ -983,12 +983,11 @@ def pod_monitor():
             <tr style="transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc'" onmouseout="this.style.backgroundColor='transparent'">
                 <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">{pod['name']}</td>
                 <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
-                    <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">
+                    <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500; white-space: nowrap;">
                         {pod['namespace']}
                     </span>
                 </td>
                 <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
-                    <span class="status-indicator {status_indicator}"></span>
                     {status_icon} {pod['status']}
                 </td>
                 <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280;">{pod['node']}</td>
@@ -1200,12 +1199,11 @@ def pod_monitor():
                 <tr style="transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc'" onmouseout="this.style.backgroundColor='transparent'">
                     <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${{pod.name}}</td>
                     <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
-                        <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">
+                        <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500; white-space: nowrap;">
                             ${{pod.namespace}}
                         </span>
                     </td>
                     <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
-                        <span class="status-indicator ${{statusIndicator}}"></span>
                         ${{statusIcon}} ${{pod.status}}
                     </td>
                     <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280;">${{pod.node}}</td>
