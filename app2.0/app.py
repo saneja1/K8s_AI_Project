@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, request
 import datetime
 import subprocess
 import json
@@ -116,6 +116,99 @@ def get_vm_resources(vm_name, zone="us-central1-a"):
     except Exception as e:
         log_command(f"gcloud compute ssh {vm_name}", "❌ Failed", f"Exception: {str(e)}")
         return {'vm_name': vm_name, 'zone': zone, 'error': str(e)}
+
+def get_pods_info():
+    """Get information about all pods in the cluster."""
+    fetch_time = datetime.datetime.now()
+    try:
+        log_command("kubectl get pods --all-namespaces -o json", "Running", "Fetching pod data from cluster via SSH")
+        
+        # Execute kubectl on master node via SSH
+        full_command = "export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl get pods --all-namespaces -o json"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "k8s-master-001",
+            "--zone=us-central1-a", 
+            f"--command={full_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15)
+        
+        pods_data = []
+        if result.returncode == 0:
+            pods_json = json.loads(result.stdout)
+            pod_count = len(pods_json.get('items', []))
+            log_command("kubectl get pods --all-namespaces", "✅ Success", f"Found {pod_count} pods")
+            
+            for pod in pods_json.get('items', []):
+                pod_info = {
+                    'name': pod['metadata']['name'],
+                    'namespace': pod['metadata']['namespace'],
+                    'status': pod['status'].get('phase', 'Unknown'),
+                    'node': pod['spec'].get('nodeName', 'Unknown'),
+                    'ready': '0/0',
+                    'restarts': 0,
+                    'fetch_timestamp': fetch_time
+                }
+                
+                # Calculate ready containers
+                container_statuses = pod['status'].get('containerStatuses', [])
+                ready_containers = sum(1 for c in container_statuses if c.get('ready', False))
+                total_containers = len(container_statuses)
+                pod_info['ready'] = f"{ready_containers}/{total_containers}"
+                
+                # Count restarts
+                pod_info['restarts'] = sum(c.get('restartCount', 0) for c in container_statuses)
+                
+                pods_data.append(pod_info)
+        else:
+            log_command("kubectl get pods", "❌ Failed", f"Error: {result.stderr[:100]}")
+        
+        return pods_data, fetch_time
+    except Exception as e:
+        log_command("kubectl get pods", "❌ Failed", f"Exception: {str(e)}")
+        return [], fetch_time
+
+def execute_kubectl_command(command, timeout=10):
+    """Execute kubectl command on master node via SSH."""
+    try:
+        log_command(f"kubectl {command}", "Running", f"Executing kubectl command on master node")
+        
+        # Execute kubectl on the master node via SSH
+        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl {command}"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "k8s-master-001",
+            "--zone=us-central1-a",
+            f"--command={full_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=timeout)
+        
+        if result.returncode == 0:
+            log_command(f"kubectl {command}", "✅ Success", f"Command completed successfully")
+            return {'success': True, 'output': result.stdout}
+        else:
+            error_msg = result.stderr[:200] if result.stderr else "Unknown error"
+            log_command(f"kubectl {command}", "❌ Failed", f"Error: {error_msg}")
+            return {'success': False, 'error': error_msg}
+            
+    except subprocess.TimeoutExpired:
+        log_command(f"kubectl {command}", "❌ Failed", "Timeout")
+        return {'success': False, 'error': 'Command timed out'}
+    except Exception as e:
+        log_command(f"kubectl {command}", "❌ Failed", f"Exception: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+def format_time_ago(timestamp):
+    """Format datetime as 'X seconds/minutes ago'."""
+    if timestamp is None:
+        return 'Never'
+    elapsed = (datetime.datetime.now() - timestamp).total_seconds()
+    if elapsed < 60:
+        return f"{int(elapsed)}s ago"
+    elif elapsed < 3600:
+        return f"{int(elapsed / 60)}m ago"
+    else:
+        return f"{int(elapsed / 3600)}h ago"
 
 # HTML template for the dashboard
 dashboard_template = """
@@ -482,11 +575,25 @@ def host_validator():
 
 @app.route('/vm-status')
 def vm_status():
-    # Get VM data
+    # Get VM data with fetch timestamp
+    fetch_time = datetime.datetime.now()
     vm_table_data = []
     total_vms = len(VM_LIST)
     active_vms = 0
     error_vms = 0
+    
+    # Calculate how long ago the data was fetched
+    time_since_fetch = datetime.datetime.now() - fetch_time
+    seconds_ago = int(time_since_fetch.total_seconds())
+    
+    if seconds_ago < 60:
+        time_ago_str = f"{seconds_ago} seconds ago"
+    elif seconds_ago < 3600:
+        minutes_ago = seconds_ago // 60
+        time_ago_str = f"{minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago"
+    else:
+        hours_ago = seconds_ago // 3600
+        time_ago_str = f"{hours_ago} hour{'s' if hours_ago != 1 else ''} ago"
     
     for vm_config in VM_LIST:
         vm_resources = get_vm_resources(vm_config['name'], vm_config['zone'])
@@ -559,20 +666,52 @@ def vm_status():
     
     content = f"""
     <h2>🖥️ Virtual Machine Status</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div>
+            <h3 style="margin: 0; font-size: 1.2rem;">🖥️ Virtual Machine Status</h3>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Real-time infrastructure monitoring</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="text-align: right;">
+                <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 2px;">Last updated:</div>
+                <div id="timeAgo" style="font-weight: bold; font-size: 1rem;">🕒 {time_ago_str}</div>
+                <div id="lastUpdateTime" style="font-size: 0.8rem; opacity: 0.8; margin-top: 2px;" data-timestamp="{fetch_time.isoformat()}">{fetch_time.strftime('%Y-%m-%d %H:%M:%S')}</div>
+            </div>
+            <button onclick="refreshVMData()" style="
+                background: rgba(255, 255, 255, 0.15);
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                padding: 10px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 500;
+                font-size: 0.9rem;
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                backdrop-filter: blur(10px);
+            " onmouseover="this.style.background='rgba(255, 255, 255, 0.25)'; this.style.transform='translateY(-1px)'" 
+               onmouseout="this.style.background='rgba(255, 255, 255, 0.15)'; this.style.transform='translateY(0)'">
+                <span id="refreshIcon" style="font-size: 1.1em;">🔄</span>
+                <span id="refreshText">Refresh</span>
+            </button>
+        </div>
+    </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
         <div style="padding: 20px; background: #f0fff4; border-radius: 8px; text-align: center;">
             <h3 style="color: #38a169;">Active VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #38a169; margin: 10px 0;">{active_vms}</div>
+            <div id="activeVMs" style="font-size: 36px; font-weight: bold; color: #38a169; margin: 10px 0;">{active_vms}</div>
             <p style="color: #718096;">Currently Running</p>
         </div>
         <div style="padding: 20px; background: #fed7d7; border-radius: 8px; text-align: center;">
             <h3 style="color: #e53e3e;">Error VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #e53e3e; margin: 10px 0;">{error_vms}</div>
+            <div id="errorVMs" style="font-size: 36px; font-weight: bold; color: #e53e3e; margin: 10px 0;">{error_vms}</div>
             <p style="color: #718096;">Connection Issues</p>
         </div>
         <div style="padding: 20px; background: #ebf8ff; border-radius: 8px; text-align: center;">
             <h3 style="color: #3182ce;">Total VMs</h3>
-            <div style="font-size: 36px; font-weight: bold; color: #3182ce; margin: 10px 0;">{total_vms}</div>
+            <div id="totalVMs" style="font-size: 36px; font-weight: bold; color: #3182ce; margin: 10px 0;">{total_vms}</div>
             <p style="color: #718096;">Configured</p>
         </div>
     </div>
@@ -592,13 +731,13 @@ def vm_status():
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">External IP</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="vmTableBody">
                     {table_rows}
                 </tbody>
             </table>
         </div>
         <div style="margin-top: 20px; display: flex; gap: 15px; flex-wrap: wrap;">
-            <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="location.reload()">Refresh Status</button>
+            <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="refreshVMData()">Refresh Status</button>
             <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="downloadVMReport()">Export Report</button>
             <button class="card-button" style="width: auto; padding: 10px 20px;" onclick="clearLogs()">Clear Logs</button>
         </div>
@@ -676,11 +815,101 @@ def vm_status():
                 <p style="color: #d1d5db; margin: 8px 0 0 0;">Command logs will appear here when VM status is refreshed</p>
             </div>"""
     
-    content += logs_html + """
+    content += logs_html + f"""
         </div>
     </div>
     
     <script>
+    let lastFetchTime = new Date('{fetch_time.isoformat()}');
+    
+    // Update time ago display every second
+    function updateTimeAgo() {{
+        const now = new Date();
+        const timeDiff = Math.floor((now - lastFetchTime) / 1000);
+        
+        let timeAgoStr;
+        if (timeDiff < 60) {{
+            timeAgoStr = timeDiff + ' seconds ago';
+        }} else if (timeDiff < 3600) {{
+            const minutes = Math.floor(timeDiff / 60);
+            timeAgoStr = minutes + (minutes === 1 ? ' minute ago' : ' minutes ago');
+        }} else {{
+            const hours = Math.floor(timeDiff / 3600);
+            timeAgoStr = hours + (hours === 1 ? ' hour ago' : ' hours ago');
+        }}
+        
+        document.getElementById('timeAgo').innerHTML = '🕒 ' + timeAgoStr;
+    }}
+    
+    // Start the timer to update "time ago" every second
+    setInterval(updateTimeAgo, 1000);
+    
+    function refreshVMData() {{
+        const refreshIcon = document.getElementById('refreshIcon');
+        const refreshText = document.getElementById('refreshText');
+        
+        // Show loading state
+        refreshIcon.style.animation = 'spin 1s linear infinite';
+        refreshText.textContent = 'Loading...';
+        
+        fetch('/api/vm-data')
+        .then(response => response.json())
+        .then(data => {{
+            // Update timestamp
+            lastFetchTime = new Date(data.last_updated);
+            document.getElementById('lastUpdateTime').textContent = lastFetchTime.toLocaleString();
+            document.getElementById('lastUpdateTime').setAttribute('data-timestamp', data.last_updated);
+            
+            // Update metrics
+            document.getElementById('activeVMs').textContent = data.summary.active;
+            document.getElementById('errorVMs').textContent = data.summary.error;
+            document.getElementById('totalVMs').textContent = data.summary.total;
+            
+            // Update table
+            updateVMTable(data.vms);
+            
+            // Reset button state
+            refreshIcon.style.animation = '';
+            refreshText.textContent = 'Refresh';
+            
+            // Update time ago immediately
+            updateTimeAgo();
+        }})
+        .catch(error => {{
+            console.error('Error refreshing VM data:', error);
+            refreshIcon.style.animation = '';
+            refreshText.textContent = 'Error';
+            setTimeout(() => {{
+                refreshText.textContent = 'Refresh';
+            }}, 2000);
+        }});
+    }}
+    
+    function updateVMTable(vms) {{
+        const tbody = document.getElementById('vmTableBody');
+        let tableRows = '';
+        
+        vms.forEach(vm => {{
+            const statusIndicator = vm.status === 'Running' ? 'status-online' : 'status-offline';
+            const memoryDisplay = vm.memory_used_gib && vm.memory_total_gib ? 
+                `${{vm.memory_used_gib.toFixed(1)}}GB / ${{vm.memory_total_gib.toFixed(1)}}GB` : 'Error';
+            const cpuUsage = vm.cpu_usage_percent !== null ? `${{vm.cpu_usage_percent.toFixed(1)}}%` : 'Error';
+            
+            tableRows += `
+            <tr>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><strong>${{vm.name}}</strong></td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator ${{statusIndicator}}"></span>${{vm.status}}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${{cpuUsage}}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${{memoryDisplay}}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${{vm.role}}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${{vm.internal_ip}}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">${{vm.external_ip}}</td>
+            </tr>`;
+        }});
+        
+        tbody.innerHTML = tableRows;
+    }}
+    
     function downloadVMReport() {{
         const data = {json.dumps(vm_table_data)};
         const blob = new Blob([JSON.stringify(data, null, 2)], {{type: 'application/json'}});
@@ -700,6 +929,13 @@ def vm_status():
             .catch(err => console.error('Failed to clear logs:', err));
     }}
     </script>
+    
+    <style>
+    @keyframes spin {{
+        0% {{ transform: rotate(0deg); }}
+        100% {{ transform: rotate(360deg); }}
+    }}
+    </style>
     """
     return render_template_string(dashboard_template,
                                 title="VM Status - Kubernetes AI Dashboard",
@@ -711,84 +947,354 @@ def vm_status():
 
 @app.route('/pod-monitor')
 def pod_monitor():
-    content = """
+    # Get pod data with fetch timestamp
+    pods_data, last_fetch_time = get_pods_info()
+    
+    # Calculate how long ago the data was fetched
+    time_since_fetch = datetime.datetime.now() - last_fetch_time
+    seconds_ago = int(time_since_fetch.total_seconds())
+    
+    if seconds_ago < 60:
+        time_ago_str = f"{seconds_ago} seconds ago"
+    elif seconds_ago < 3600:
+        minutes_ago = seconds_ago // 60
+        time_ago_str = f"{minutes_ago} minute{'s' if minutes_ago != 1 else ''} ago"
+    else:
+        hours_ago = seconds_ago // 3600
+        time_ago_str = f"{hours_ago} hour{'s' if hours_ago != 1 else ''} ago"
+    
+    # Calculate metrics
+    total_pods = len(pods_data)
+    running_pods = sum(1 for pod in pods_data if pod['status'] == 'Running')
+    pending_pods = sum(1 for pod in pods_data if pod['status'] == 'Pending')
+    failed_pods = sum(1 for pod in pods_data if pod['status'] == 'Failed')
+    
+    # Get unique namespaces
+    namespaces = sorted(list(set(pod['namespace'] for pod in pods_data))) if pods_data else []
+    
+    # Generate pod table rows
+    pod_table_rows = ""
+    if pods_data:
+        for pod in pods_data:
+            status_icon = "🟢" if pod['status'] == 'Running' else "🔴" if pod['status'] == 'Failed' else "🟡"
+            status_indicator = 'status-online' if pod['status'] == 'Running' else 'status-offline' if pod['status'] == 'Failed' else 'status-warning'
+            
+            pod_table_rows += f"""
+            <tr style="transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc'" onmouseout="this.style.backgroundColor='transparent'">
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">{pod['name']}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
+                    <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">
+                        {pod['namespace']}
+                    </span>
+                </td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
+                    <span class="status-indicator {status_indicator}"></span>
+                    {status_icon} {pod['status']}
+                </td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280;">{pod['node']}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">{pod['ready']}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">{pod['restarts']}</td>
+                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280; font-size: 0.9rem;">{format_time_ago(pod['fetch_timestamp'])}</td>
+            </tr>"""
+    else:
+        pod_table_rows = """
+        <tr>
+            <td colspan="7" style="padding: 40px; text-align: center; color: #9ca3af;">
+                <div style="font-size: 2rem; margin-bottom: 12px;">🚀</div>
+                <div style="font-weight: 500; margin-bottom: 8px;">No pods found</div>
+                <div style="font-size: 0.9rem;">Make sure kubectl is configured and cluster is running</div>
+            </td>
+        </tr>"""
+
+    # Namespace filter dropdown
+    namespace_options = ""
+    for ns in ["All"] + namespaces:
+        namespace_options += f'<option value="{ns}">{ns}</option>'
+
+    content = f"""
     <h2>📊 Pod Monitor</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div>
+            <h3 style="margin: 0; font-size: 1.2rem;">📊 Kubernetes Pod Status</h3>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Real-time cluster monitoring</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="text-align: right;">
+                <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 2px;">Last updated:</div>
+                <div id="timeAgo" style="font-weight: bold; font-size: 1rem;">🕒 {time_ago_str}</div>
+                <div id="lastUpdateTime" style="font-size: 0.8rem; opacity: 0.8; margin-top: 2px;" data-timestamp="{last_fetch_time.isoformat()}">{last_fetch_time.strftime('%Y-%m-%d %H:%M:%S')}</div>
+            </div>
+            <button onclick="refreshPodData()" style="
+                background: rgba(255, 255, 255, 0.15);
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                padding: 10px 16px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 500;
+                font-size: 0.9rem;
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                backdrop-filter: blur(10px);
+            " onmouseover="this.style.background='rgba(255, 255, 255, 0.25)'; this.style.transform='translateY(-1px)'" 
+               onmouseout="this.style.background='rgba(255, 255, 255, 0.15)'; this.style.transform='translateY(0)'">
+                <span id="refreshIcon" style="font-size: 1.1em;">🔄</span>
+                <span id="refreshText">Refresh</span>
+            </button>
+        </div>
+    </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 30px 0;">
-        <div style="padding: 20px; background: #f0fff4; border-radius: 8px; text-align: center;">
-            <h4 style="color: #38a169;">Running Pods</h4>
-            <div style="font-size: 28px; font-weight: bold; color: #38a169;">12</div>
+        <div style="padding: 20px; background: #f0fff4; border-radius: 12px; text-align: center; border: 2px solid #bbf7d0;">
+            <h4 style="color: #15803d; margin: 0 0 10px 0;">Running Pods</h4>
+            <div id="runningPods" style="font-size: 32px; font-weight: bold; color: #15803d;">{running_pods}</div>
         </div>
-        <div style="padding: 20px; background: #fffaf0; border-radius: 8px; text-align: center;">
-            <h4 style="color: #d69e2e;">Pending Pods</h4>
-            <div style="font-size: 28px; font-weight: bold; color: #d69e2e;">2</div>
+        <div style="padding: 20px; background: #fffbeb; border-radius: 12px; text-align: center; border: 2px solid #fed7aa;">
+            <h4 style="color: #d97706; margin: 0 0 10px 0;">Pending Pods</h4>
+            <div id="pendingPods" style="font-size: 32px; font-weight: bold; color: #d97706;">{pending_pods}</div>
         </div>
-        <div style="padding: 20px; background: #fed7d7; border-radius: 8px; text-align: center;">
-            <h4 style="color: #e53e3e;">Failed Pods</h4>
-            <div style="font-size: 28px; font-weight: bold; color: #e53e3e;">0</div>
+        <div style="padding: 20px; background: #fef2f2; border-radius: 12px; text-align: center; border: 2px solid #fecaca;">
+            <h4 style="color: #dc2626; margin: 0 0 10px 0;">Failed Pods</h4>
+            <div id="failedPods" style="font-size: 32px; font-weight: bold; color: #dc2626;">{failed_pods}</div>
         </div>
-        <div style="padding: 20px; background: #ebf8ff; border-radius: 8px; text-align: center;">
-            <h4 style="color: #3182ce;">Total Pods</h4>
-            <div style="font-size: 28px; font-weight: bold; color: #3182ce;">14</div>
+        <div style="padding: 20px; background: #eff6ff; border-radius: 12px; text-align: center; border: 2px solid #bfdbfe;">
+            <h4 style="color: #2563eb; margin: 0 0 10px 0;">Total Pods</h4>
+            <div id="totalPods" style="font-size: 32px; font-weight: bold; color: #2563eb;">{total_pods}</div>
         </div>
     </div>
     
-    <div style="display: grid; grid-template-columns: 1fr 300px; gap: 20px; margin-top: 30px;">
-        <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <h3>Pod Status</h3>
-            <div style="overflow-x: auto; margin-top: 20px;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                    <thead>
-                        <tr style="background: #f7fafc;">
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Pod Name</th>
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Namespace</th>
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Status</th>
-                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Restarts</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">nginx-deployment-1</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">default</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-online"></span>Running</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">0</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">api-service-2</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">production</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-online"></span>Running</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">1</td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">database-pod</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">production</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><span class="status-indicator status-warning"></span>Pending</td>
-                            <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">0</td>
-                        </tr>
-                    </tbody>
-                </table>
+    <div style="background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 30px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+            <h3 style="margin: 0; color: #2d3748;">Pod Details</h3>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <label for="namespaceFilter" style="color: #4a5568; font-weight: 500;">Filter by namespace:</label>
+                <select id="namespaceFilter" onchange="filterPods()" style="padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 8px; background: white; color: #2d3748;">
+                    {namespace_options}
+                </select>
             </div>
         </div>
         
-        <div style="background: white; border-radius: 8px; padding: 25px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <h3>Quick Actions</h3>
-            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
-                <button class="card-button">View All Pods</button>
-                <button class="card-button">Check Logs</button>
-                <button class="card-button">Restart Failed</button>
-                <button class="card-button">Scale Deployment</button>
-            </div>
-            
-            <div style="margin-top: 30px; padding: 15px; background: #f7fafc; border-radius: 6px;">
-                <h4>Resource Usage</h4>
-                <div style="margin-top: 10px; font-size: 14px;">
-                    <div>CPU: 2.4 / 8 cores</div>
-                    <div>Memory: 6.2 / 16 GB</div>
-                    <div>Storage: 45 / 100 GB</div>
-                </div>
-            </div>
+        <div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <table id="podsTable" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Pod Name</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Namespace</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Status</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Node</th>
+                        <th style="padding: 14px 12px; text-align: center; font-weight: 600;">Ready</th>
+                        <th style="padding: 14px 12px; text-align: center; font-weight: 600;">Restarts</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Data Age</th>
+                    </tr>
+                </thead>
+                <tbody id="podsTableBody">
+                    {pod_table_rows}
+                </tbody>
+            </table>
         </div>
     </div>
+
+    <!-- Quick Actions Section -->
+    <div style="background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 30px;">
+        <h3 style="margin: 0 0 20px 0; color: #2d3748;">Quick Actions</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <button class="card-button" onclick="executeKubectl('cluster-info')" style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+                <span>📋</span> Get Cluster Info
+            </button>
+            <button class="card-button" onclick="executeKubectl('get nodes -o wide')" style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+                <span>🖥️</span> List Nodes
+            </button>
+            <button class="card-button" onclick="executeKubectl('get pods --all-namespaces')" style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+                <span>🚀</span> All Pods
+            </button>
+            <button class="card-button" onclick="location.reload()" style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+                <span>🔄</span> Refresh Data
+            </button>
+        </div>
+        
+        <!-- Command Output Area -->
+        <div id="commandOutput" style="margin-top: 20px; padding: 15px; background: #1a202c; color: #e2e8f0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; display: none;"></div>
+    </div>
+    
+    <script>
+    let lastFetchTime = new Date('{last_fetch_time.isoformat()}');
+    
+    // Update time ago display every second
+    function updateTimeAgo() {{
+        const now = new Date();
+        const timeDiff = Math.floor((now - lastFetchTime) / 1000);
+        
+        let timeAgoStr;
+        if (timeDiff < 60) {{
+            timeAgoStr = timeDiff + ' seconds ago';
+        }} else if (timeDiff < 3600) {{
+            const minutes = Math.floor(timeDiff / 60);
+            timeAgoStr = minutes + (minutes === 1 ? ' minute ago' : ' minutes ago');
+        }} else {{
+            const hours = Math.floor(timeDiff / 3600);
+            timeAgoStr = hours + (hours === 1 ? ' hour ago' : ' hours ago');
+        }}
+        
+        document.getElementById('timeAgo').innerHTML = '🕒 ' + timeAgoStr;
+    }}
+    
+    // Start the timer to update "time ago" every second
+    setInterval(updateTimeAgo, 1000);
+    
+    function refreshPodData() {{
+        const refreshIcon = document.getElementById('refreshIcon');
+        const refreshText = document.getElementById('refreshText');
+        
+        // Show loading state
+        refreshIcon.style.animation = 'spin 1s linear infinite';
+        refreshText.textContent = 'Loading...';
+        
+        fetch('/api/pod-data')
+        .then(response => response.json())
+        .then(data => {{
+            // Update timestamp
+            lastFetchTime = new Date(data.last_updated);
+            document.getElementById('lastUpdateTime').textContent = lastFetchTime.toLocaleString();
+            document.getElementById('lastUpdateTime').setAttribute('data-timestamp', data.last_updated);
+            
+            // Update metrics
+            document.getElementById('runningPods').textContent = data.summary.running;
+            document.getElementById('pendingPods').textContent = data.summary.pending;
+            document.getElementById('failedPods').textContent = data.summary.failed;
+            document.getElementById('totalPods').textContent = data.summary.total;
+            
+            // Update table
+            updatePodsTable(data.pods);
+            
+            // Update namespace filter
+            updateNamespaceFilter(data.namespaces);
+            
+            // Reset button state
+            refreshIcon.style.animation = '';
+            refreshText.textContent = 'Refresh';
+            
+            // Update time ago immediately
+            updateTimeAgo();
+        }})
+        .catch(error => {{
+            console.error('Error refreshing pod data:', error);
+            refreshIcon.style.animation = '';
+            refreshText.textContent = 'Error';
+            setTimeout(() => {{
+                refreshText.textContent = 'Refresh';
+            }}, 2000);
+        }});
+    }}
+    
+    function updatePodsTable(pods) {{
+        const tbody = document.getElementById('podsTableBody');
+        let tableRows = '';
+        
+        if (pods.length > 0) {{
+            pods.forEach(pod => {{
+                const statusIcon = pod.status === 'Running' ? '🟢' : (pod.status === 'Failed' ? '🔴' : '🟡');
+                const statusIndicator = pod.status === 'Running' ? 'status-online' : (pod.status === 'Failed' ? 'status-offline' : 'status-warning');
+                
+                tableRows += `
+                <tr style="transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc'" onmouseout="this.style.backgroundColor='transparent'">
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${{pod.name}}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
+                        <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">
+                            ${{pod.namespace}}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
+                        <span class="status-indicator ${{statusIndicator}}"></span>
+                        ${{statusIcon}} ${{pod.status}}
+                    </td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280;">${{pod.node}}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">${{pod.ready}}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center;">${{pod.restarts}}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #6b7280; font-size: 0.9rem;">Just now</td>
+                </tr>`;
+            }});
+        }} else {{
+            tableRows = `
+            <tr>
+                <td colspan="7" style="padding: 40px; text-align: center; color: #9ca3af;">
+                    <div style="font-size: 2rem; margin-bottom: 12px;">🚀</div>
+                    <div style="font-weight: 500; margin-bottom: 8px;">No pods found</div>
+                    <div style="font-size: 0.9rem;">Make sure kubectl is configured and cluster is running</div>
+                </td>
+            </tr>`;
+        }}
+        
+        tbody.innerHTML = tableRows;
+    }}
+    
+    function updateNamespaceFilter(namespaces) {{
+        const select = document.getElementById('namespaceFilter');
+        const currentValue = select.value;
+        
+        select.innerHTML = '<option value="All">All</option>';
+        namespaces.forEach(ns => {{
+            select.innerHTML += `<option value="${{ns}}">${{ns}}</option>`;
+        }});
+        
+        // Restore previous selection if it still exists
+        if (namespaces.includes(currentValue) || currentValue === 'All') {{
+            select.value = currentValue;
+        }}
+    }}
+    
+    function filterPods() {{
+        const filter = document.getElementById('namespaceFilter').value;
+        const table = document.getElementById('podsTable');
+        const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+        
+        for (let i = 0; i < rows.length; i++) {{
+            const namespaceCell = rows[i].getElementsByTagName('td')[1];
+            if (namespaceCell) {{
+                const namespace = namespaceCell.textContent.trim();
+                if (filter === 'All' || namespace === filter) {{
+                    rows[i].style.display = '';
+                }} else {{
+                    rows[i].style.display = 'none';
+                }}
+            }}
+        }}
+    }}
+    
+    function executeKubectl(command) {{
+        const outputDiv = document.getElementById('commandOutput');
+        outputDiv.style.display = 'block';
+        outputDiv.textContent = 'Executing: kubectl ' + command + '\\n\\nLoading...';
+        
+        fetch('/api/kubectl', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{'command': command}})
+        }})
+        .then(response => response.json())
+        .then(data => {{
+            if (data.success) {{
+                outputDiv.textContent = 'kubectl ' + command + ':\\n\\n' + data.output;
+            }} else {{
+                outputDiv.textContent = 'Error executing kubectl ' + command + ':\\n\\n' + data.error;
+                outputDiv.style.background = '#7f1d1d';
+            }}
+        }})
+        .catch(error => {{
+            outputDiv.textContent = 'Error: ' + error;
+            outputDiv.style.background = '#7f1d1d';
+        }});
+    }}
+    </script>
+    
+    <style>
+    @keyframes spin {{
+        0% {{ transform: rotate(0deg); }}
+        100% {{ transform: rotate(360deg); }}
+    }}
+    </style>
     """
+
     return render_template_string(dashboard_template,
                                 title="Pod Monitor - Kubernetes AI Dashboard",
                                 page="pod-monitor",
@@ -856,12 +1362,50 @@ def get_vm_data():
         'last_updated': datetime.datetime.now().isoformat()
     })
 
+@app.route('/api/pod-data')
+def get_pod_data():
+    """API endpoint to get pod data as JSON for AJAX refresh."""
+    pods_data, last_fetch_time = get_pods_info()
+    
+    # Calculate metrics
+    total_pods = len(pods_data)
+    running_pods = sum(1 for pod in pods_data if pod['status'] == 'Running')
+    pending_pods = sum(1 for pod in pods_data if pod['status'] == 'Pending')
+    failed_pods = sum(1 for pod in pods_data if pod['status'] == 'Failed')
+    
+    # Get unique namespaces
+    namespaces = sorted(list(set(pod['namespace'] for pod in pods_data))) if pods_data else []
+    
+    return jsonify({
+        'pods': pods_data,
+        'summary': {
+            'total': total_pods,
+            'running': running_pods,
+            'pending': pending_pods,
+            'failed': failed_pods
+        },
+        'namespaces': namespaces,
+        'last_updated': last_fetch_time.isoformat()
+    })
+
 @app.route('/api/clear-logs', methods=['POST'])
 def clear_logs():
     """API endpoint to clear command logs."""
     global command_logs
     command_logs.clear()
     return jsonify({'status': 'success', 'message': 'Logs cleared'})
+
+@app.route('/api/kubectl', methods=['POST'])
+def execute_kubectl():
+    """API endpoint to execute kubectl commands."""
+    data = request.get_json()
+    command = data.get('command', '')
+    
+    if not command:
+        return jsonify({'success': False, 'error': 'No command provided'})
+    
+    result = execute_kubectl_command(command)
+    return jsonify(result)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=7000, debug=True)
