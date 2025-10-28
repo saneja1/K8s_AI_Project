@@ -2,6 +2,11 @@ from flask import Flask, render_template_string, jsonify, request
 import datetime
 import subprocess
 import json
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -225,18 +230,74 @@ dashboard_template = """
             box-sizing: border-box;
         }
         
+        /* Light Theme (Default) */
+        :root {
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --header-bg: rgba(255, 255, 255, 0.95);
+            --header-shadow: rgba(0, 0, 0, 0.1);
+            --text-primary: #333;
+            --text-secondary: #555;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --content-area-bg: rgba(255, 255, 255, 0.95);
+            --card-title: #2d3748;
+            --card-description: #718096;
+            --table-text: #2d3748;
+            --table-border: #e2e8f0;
+        }
+        
+        /* Dark Theme */
+        body.dark-theme {
+            --bg-gradient-start: #2d3748;
+            --bg-gradient-end: #1a202c;
+            --header-bg: rgba(45, 55, 72, 0.95);
+            --header-shadow: rgba(0, 0, 0, 0.5);
+            --text-primary: #f7fafc;
+            --text-secondary: #e2e8f0;
+            --card-bg: rgba(45, 55, 72, 0.95);
+            --content-area-bg: rgba(45, 55, 72, 0.95);
+            --card-title: #f7fafc;
+            --card-description: #cbd5e1;
+            --table-text: #f7fafc;
+            --table-border: #4a5568;
+        }
+        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
-            color: #333;
+            transition: all 0.3s ease;
+        }
+        
+        /* Force black text for all content except nav menu and page headers */
+        .content-area, .content-area * {
+            color: #000000 !important;
+        }
+        
+        /* Ensure nav menu uses theme colors */
+        .nav-menu, .nav-menu * {
+            color: var(--text-primary) !important;
+        }
+        
+        /* Page headers always white regardless of theme - stronger override */
+        .content-area > div > div[style*="linear-gradient"],
+        .content-area > div > div[style*="linear-gradient"] *,
+        .content-area div[style*="background: linear-gradient"],
+        .content-area div[style*="background: linear-gradient"] * {
+            color: white !important;
+        }
+        
+        /* Table headers with gradient background always white */
+        table thead tr[style*="linear-gradient"] th,
+        table thead tr[style*="linear-gradient"] * {
+            color: white !important;
         }
         
         .header {
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--header-bg);
             backdrop-filter: blur(10px);
             padding: 15px 0;
-            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 20px var(--header-shadow);
             position: sticky;
             top: 0;
             z-index: 100;
@@ -254,7 +315,7 @@ dashboard_template = """
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #4a5568;
+            color: var(--text-primary);
             display: flex;
             align-items: center;
         }
@@ -273,7 +334,7 @@ dashboard_template = """
         
         .nav-menu a {
             text-decoration: none;
-            color: #4a5568;
+            color: var(--text-primary);
             font-weight: 500;
             padding: 8px 16px;
             border-radius: 8px;
@@ -309,7 +370,7 @@ dashboard_template = """
         }
         
         .card {
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--card-bg);
             backdrop-filter: blur(10px);
             border-radius: 16px;
             padding: 30px;
@@ -333,12 +394,12 @@ dashboard_template = """
             font-size: 24px;
             font-weight: 600;
             margin-bottom: 15px;
-            color: #2d3748;
+            color: var(--card-title);
             text-align: center;
         }
         
         .card-description {
-            color: #718096;
+            color: var(--card-description);
             line-height: 1.6;
             text-align: center;
             margin-bottom: 20px;
@@ -384,7 +445,7 @@ dashboard_template = """
         }
         
         .content-area {
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--content-area-bg);
             backdrop-filter: blur(10px);
             border-radius: 16px;
             padding: 40px;
@@ -426,6 +487,24 @@ dashboard_template = """
                     <li><a href="/pod-monitor" class="{{ 'active' if page == 'pod-monitor' else '' }}">Pod Monitor</a></li>
                 </ul>
             </nav>
+            <button id="themeToggle" onclick="toggleTheme()" style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 20px;
+                cursor: pointer;
+                font-weight: 500;
+                font-size: 0.9rem;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.3s ease;
+                margin-left: auto;
+            " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                <span id="themeIcon">🌙</span>
+                <span id="themeText">Dark</span>
+            </button>
         </div>
     </header>
 
@@ -472,6 +551,41 @@ dashboard_template = """
     <footer class="footer">
         <p>&copy; {{ current_year }} Kubernetes AI Dashboard | Last updated: {{ current_time }}</p>
     </footer>
+    
+    <script>
+    // Theme toggle functionality
+    function toggleTheme() {
+        const body = document.body;
+        const themeIcon = document.getElementById('themeIcon');
+        const themeText = document.getElementById('themeText');
+        
+        body.classList.toggle('dark-theme');
+        
+        if (body.classList.contains('dark-theme')) {
+            themeIcon.textContent = '☀️';
+            themeText.textContent = 'Light';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            themeIcon.textContent = '🌙';
+            themeText.textContent = 'Dark';
+            localStorage.setItem('theme', 'light');
+        }
+    }
+    
+    // Load saved theme on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const savedTheme = localStorage.getItem('theme');
+        const body = document.body;
+        const themeIcon = document.getElementById('themeIcon');
+        const themeText = document.getElementById('themeText');
+        
+        if (savedTheme === 'dark') {
+            body.classList.add('dark-theme');
+            themeIcon.textContent = '☀️';
+            themeText.textContent = 'Light';
+        }
+    });
+    </script>
 </body>
 </html>
 """
@@ -492,8 +606,8 @@ def k8s_assistant():
         
         <!-- Chat Header -->
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center;">
-            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">🤖 Kubernetes AI Assistant</h2>
-            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Ask me anything about your Kubernetes cluster</p>
+            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: white;">🤖 Kubernetes AI Assistant</h2>
+            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.95rem; color: white;">Ask me anything about your Kubernetes cluster</p>
         </div>
         
         <!-- Chat Messages Container -->
@@ -695,17 +809,43 @@ def k8s_assistant():
         document.getElementById('sendButton').disabled = true;
         document.getElementById('sendButton').style.opacity = '0.5';
         
-        // Simulate AI response (replace with actual API call later)
-        setTimeout(() => {
+        // Send to API
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                model: 'claude'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
             hideTypingIndicator();
-            addMessage("I'm a placeholder response. The AI backend will be integrated later. You asked: '" + message + "'", 'assistant');
+            
+            if (data.success) {
+                addMessage(data.response, 'assistant');
+            } else {
+                addMessage('Error: ' + (data.error || 'Failed to get response'), 'assistant');
+            }
             
             // Re-enable input
             isWaitingForResponse = false;
             input.disabled = false;
             input.focus();
             autoResize(input);
-        }, 2000);
+        })
+        .catch(error => {
+            hideTypingIndicator();
+            addMessage('Error: ' + error.message, 'assistant');
+            
+            // Re-enable input
+            isWaitingForResponse = false;
+            input.disabled = false;
+            input.focus();
+            autoResize(input);
+        });
     }
     
     // Add message to chat
@@ -769,8 +909,13 @@ def k8s_assistant():
 @app.route('/host-validator')
 def host_validator():
     content = """
-    <div style="margin: -40px -40px -30px -40px;">
-    <h2 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; margin: 0; text-align: center; font-size: 1.5rem; font-weight: 600;">✅ Host Validator</h2>
+    <div style="margin: -120px -40px -70px -40px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div>
+            <h3 style="margin: 0; font-size: 1.2rem; color: white;">✅ Host Validator</h3>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem; color: white;">Validate server requirements for Kubernetes</p>
+        </div>
+    </div>
     <div style="padding: 30px;">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 0;">
         <div style="padding: 20px; background: #f0fff4; border-radius: 8px; border: 1px solid #9ae6b4;">
@@ -963,14 +1108,14 @@ def vm_status():
         <div style="overflow-x: auto; margin-top: 20px;">
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
-                    <tr style="background: #f7fafc;">
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">VM Name</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Status</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">CPU Usage</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Memory</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Role</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">Internal IP</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0;">External IP</th>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">VM Name</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">Status</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">CPU Usage</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">Memory</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">Role</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">Internal IP</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; color: white;">External IP</th>
                     </tr>
                 </thead>
                 <tbody id="vmTableBody">
@@ -1010,10 +1155,10 @@ def vm_status():
             <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
                 <thead>
                     <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Timestamp</th>
-                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Command</th>
-                        <th style="padding: 12px 16px; text-align: center; font-weight: 600;">Status</th>
-                        <th style="padding: 12px 16px; text-align: left; font-weight: 600;">Details</th>
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: white;">Timestamp</th>
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: white;">Command</th>
+                        <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: white;">Status</th>
+                        <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: white;">Details</th>
                     </tr>
                 </thead>
                 <tbody>"""
@@ -1321,13 +1466,13 @@ def pod_monitor():
             <table id="podsTable" style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <thead>
                     <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Pod Name</th>
-                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Namespace</th>
-                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Status</th>
-                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Node</th>
-                        <th style="padding: 14px 12px; text-align: center; font-weight: 600;">Ready</th>
-                        <th style="padding: 14px 12px; text-align: center; font-weight: 600;">Restarts</th>
-                        <th style="padding: 14px 12px; text-align: left; font-weight: 600;">Data Age</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600; color: white;">Pod Name</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600; color: white;">Namespace</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600; color: white;">Status</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600; color: white;">Node</th>
+                        <th style="padding: 14px 12px; text-align: center; font-weight: 600; color: white;">Ready</th>
+                        <th style="padding: 14px 12px; text-align: center; font-weight: 600; color: white;">Restarts</th>
+                        <th style="padding: 14px 12px; text-align: left; font-weight: 600; color: white;">Data Age</th>
                     </tr>
                 </thead>
                 <tbody id="podsTableBody">
@@ -1648,6 +1793,37 @@ def execute_kubectl():
     
     result = execute_kubectl_command(command)
     return jsonify(result)
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """API endpoint for AI chat."""
+    try:
+        data = request.get_json()
+        message = data.get('message', '')
+        
+        if not message:
+            return jsonify({'success': False, 'error': 'No message provided'})
+        
+        # Get Claude API key
+        anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
+        
+        if not anthropic_api_key:
+            return jsonify({'success': False, 'error': 'Anthropic API key not configured'})
+        
+        try:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=anthropic_api_key)
+            message_response = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": message}]
+            )
+            return jsonify({'success': True, 'response': message_response.content[0].text})
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Claude API error: {str(e)}'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=7000, debug=True)
