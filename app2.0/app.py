@@ -1086,20 +1086,20 @@ def vm_status():
         </div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
-        <div style="padding: 20px; background: #f0fff4; border-radius: 8px; text-align: center;">
-            <h3 style="color: #38a169;">Active VMs</h3>
-            <div id="activeVMs" style="font-size: 36px; font-weight: bold; color: #38a169; margin: 10px 0;">{active_vms}</div>
-            <p style="color: #718096;">Currently Running</p>
+        <div style="padding: 20px; background: #d1fae5; border-radius: 12px; text-align: center; border: 2px solid #6ee7b7;">
+            <h3 style="color: #047857;">Active VMs</h3>
+            <div id="activeVMs" style="font-size: 36px; font-weight: bold; color: #047857; margin: 10px 0;">{active_vms}</div>
+            <p style="color: #065f46;">Currently Running</p>
         </div>
-        <div style="padding: 20px; background: #fed7d7; border-radius: 8px; text-align: center;">
-            <h3 style="color: #e53e3e;">Error VMs</h3>
-            <div id="errorVMs" style="font-size: 36px; font-weight: bold; color: #e53e3e; margin: 10px 0;">{error_vms}</div>
-            <p style="color: #718096;">Connection Issues</p>
+        <div style="padding: 20px; background: #fecaca; border-radius: 12px; text-align: center; border: 2px solid #f87171;">
+            <h3 style="color: #b91c1c;">Error VMs</h3>
+            <div id="errorVMs" style="font-size: 36px; font-weight: bold; color: #b91c1c; margin: 10px 0;">{error_vms}</div>
+            <p style="color: #991b1b;">Connection Issues</p>
         </div>
-        <div style="padding: 20px; background: #ebf8ff; border-radius: 8px; text-align: center;">
-            <h3 style="color: #3182ce;">Total VMs</h3>
-            <div id="totalVMs" style="font-size: 36px; font-weight: bold; color: #3182ce; margin: 10px 0;">{total_vms}</div>
-            <p style="color: #718096;">Configured</p>
+        <div style="padding: 20px; background: #bfdbfe; border-radius: 12px; text-align: center; border: 2px solid #60a5fa;">
+            <h3 style="color: #1e40af;">Total VMs</h3>
+            <div id="totalVMs" style="font-size: 36px; font-weight: bold; color: #1e40af; margin: 10px 0;">{total_vms}</div>
+            <p style="color: #1e3a8a;">Configured</p>
         </div>
     </div>
     
@@ -1433,21 +1433,21 @@ def pod_monitor():
         </div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 30px 0;">
-        <div style="padding: 20px; background: #f0fff4; border-radius: 12px; text-align: center; border: 2px solid #bbf7d0;">
-            <h4 style="color: #15803d; margin: 0 0 10px 0;">Running Pods</h4>
-            <div id="runningPods" style="font-size: 32px; font-weight: bold; color: #15803d;">{running_pods}</div>
+        <div style="padding: 20px; background: #d1fae5; border-radius: 12px; text-align: center; border: 2px solid #6ee7b7;">
+            <h4 style="color: #047857; margin: 0 0 10px 0;">Running Pods</h4>
+            <div id="runningPods" style="font-size: 32px; font-weight: bold; color: #047857;">{running_pods}</div>
         </div>
-        <div style="padding: 20px; background: #fffbeb; border-radius: 12px; text-align: center; border: 2px solid #fed7aa;">
-            <h4 style="color: #d97706; margin: 0 0 10px 0;">Pending Pods</h4>
-            <div id="pendingPods" style="font-size: 32px; font-weight: bold; color: #d97706;">{pending_pods}</div>
+        <div style="padding: 20px; background: #fef3c7; border-radius: 12px; text-align: center; border: 2px solid #fcd34d;">
+            <h4 style="color: #b45309; margin: 0 0 10px 0;">Pending Pods</h4>
+            <div id="pendingPods" style="font-size: 32px; font-weight: bold; color: #b45309;">{pending_pods}</div>
         </div>
-        <div style="padding: 20px; background: #fef2f2; border-radius: 12px; text-align: center; border: 2px solid #fecaca;">
-            <h4 style="color: #dc2626; margin: 0 0 10px 0;">Failed Pods</h4>
-            <div id="failedPods" style="font-size: 32px; font-weight: bold; color: #dc2626;">{failed_pods}</div>
+        <div style="padding: 20px; background: #fecaca; border-radius: 12px; text-align: center; border: 2px solid #f87171;">
+            <h4 style="color: #b91c1c; margin: 0 0 10px 0;">Failed Pods</h4>
+            <div id="failedPods" style="font-size: 32px; font-weight: bold; color: #b91c1c;">{failed_pods}</div>
         </div>
-        <div style="padding: 20px; background: #eff6ff; border-radius: 12px; text-align: center; border: 2px solid #bfdbfe;">
-            <h4 style="color: #2563eb; margin: 0 0 10px 0;">Total Pods</h4>
-            <div id="totalPods" style="font-size: 32px; font-weight: bold; color: #2563eb;">{total_pods}</div>
+        <div style="padding: 20px; background: #bfdbfe; border-radius: 12px; text-align: center; border: 2px solid #60a5fa;">
+            <h4 style="color: #1e40af; margin: 0 0 10px 0;">Total Pods</h4>
+            <div id="totalPods" style="font-size: 32px; font-weight: bold; color: #1e40af;">{total_pods}</div>
         </div>
     </div>
     
