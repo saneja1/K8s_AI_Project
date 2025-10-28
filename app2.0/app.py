@@ -769,8 +769,10 @@ def k8s_assistant():
 @app.route('/host-validator')
 def host_validator():
     content = """
-    <h2>✅ Host Validator</h2>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 30px;">
+    <div style="margin: -40px -40px -30px -40px;">
+    <h2 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; margin: 0; text-align: center; font-size: 1.5rem; font-weight: 600;">✅ Host Validator</h2>
+    <div style="padding: 30px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 0;">
         <div style="padding: 20px; background: #f0fff4; border-radius: 8px; border: 1px solid #9ae6b4;">
             <h3>System Requirements</h3>
             <ul style="list-style: none; padding: 0; margin-top: 15px;">
@@ -802,11 +804,13 @@ def host_validator():
             <button class="card-button">Validate Host</button>
         </div>
     </div>
+    </div>
+    </div>
     """
     return render_template_string(dashboard_template,
                                 title="Host Validator - Kubernetes AI Dashboard",
                                 page="validator",
-                                page_title="Host Validator",
+                                page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -903,8 +907,8 @@ def vm_status():
         </tr>"""
     
     content = f"""
-    <h2>🖥️ Virtual Machine Status</h2>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+    <div style="margin: -120px -40px -70px -40px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
         <div>
             <h3 style="margin: 0; font-size: 1.2rem;">🖥️ Virtual Machine Status</h3>
             <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Real-time infrastructure monitoring</p>
@@ -1174,11 +1178,12 @@ def vm_status():
         100% {{ transform: rotate(360deg); }}
     }}
     </style>
+    </div>
     """
     return render_template_string(dashboard_template,
                                 title="VM Status - Kubernetes AI Dashboard",
                                 page="vm-status",
-                                page_title="Virtual Machine Status",
+                                page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -1249,8 +1254,8 @@ def pod_monitor():
         namespace_options += f'<option value="{ns}">{ns}</option>'
 
     content = f"""
-    <h2>📊 Pod Monitor</h2>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+    <div style="margin: -120px -40px -70px -40px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
         <div>
             <h3 style="margin: 0; font-size: 1.2rem;">📊 Kubernetes Pod Status</h3>
             <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem;">Real-time cluster monitoring</p>
@@ -1529,12 +1534,13 @@ def pod_monitor():
         100% {{ transform: rotate(360deg); }}
     }}
     </style>
+    </div>
     """
 
     return render_template_string(dashboard_template,
                                 title="Pod Monitor - Kubernetes AI Dashboard",
                                 page="pod-monitor",
-                                page_title="Pod Monitor",
+                                page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
