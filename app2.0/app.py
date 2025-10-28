@@ -487,43 +487,281 @@ def home():
 @app.route('/k8s-assistant')
 def k8s_assistant():
     content = """
-    <h2>🤖 Kubernetes AI Assistant</h2>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 30px;">
-        <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #667eea;">
-            <h3>Cluster Analysis</h3>
-            <p>Get intelligent insights about your Kubernetes cluster health and performance.</p>
-            <div style="margin-top: 15px;">
-                <span class="status-indicator status-online"></span>AI Analysis Ready
+    <!-- ChatGPT-style AI Assistant Interface -->
+    <div style="height: calc(100vh - 60px); display: flex; flex-direction: column; background: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; margin: -120px -40px -70px -40px;">
+        
+        <!-- Chat Header -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center;">
+            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">🤖 Kubernetes AI Assistant</h2>
+            <p style="margin: 8px 0 0 0; opacity: 0.9; font-size: 0.95rem;">Ask me anything about your Kubernetes cluster</p>
+        </div>
+        
+        <!-- Chat Messages Container -->
+        <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 20px; background: #f8fafc; display: flex; flex-direction: column; gap: 16px;">
+            
+            <!-- Welcome Message -->
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <span style="color: white; font-size: 1.2rem;">🤖</span>
+                </div>
+                <div style="background: white; padding: 16px 20px; border-radius: 18px 18px 18px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 80%; line-height: 1.5;">
+                    <p style="margin: 0; color: #2d3748;">Hello! I'm your Kubernetes AI Assistant. I can help you with:</p>
+                    <ul style="margin: 12px 0 0 0; padding-left: 20px; color: #4a5568;">
+                        <li>Cluster analysis and troubleshooting</li>
+                        <li>Pod and deployment management</li>
+                        <li>Resource optimization recommendations</li>
+                        <li>Best practices and configurations</li>
+                    </ul>
+                    <p style="margin: 12px 0 0 0; color: #2d3748;">What would you like to know?</p>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- Chat Input Area -->
+        <div style="background: white; border-top: 1px solid #e2e8f0; padding: 20px;">
+            <div style="display: flex; gap: 12px; align-items: flex-end;">
+                <div style="flex: 1; position: relative;">
+                    <textarea 
+                        id="chatInput" 
+                        placeholder="Ask about your Kubernetes cluster..." 
+                        style="
+                            width: 100%; 
+                            min-height: 50px; 
+                            max-height: 120px; 
+                            padding: 12px 50px 12px 16px; 
+                            border: 2px solid #e2e8f0; 
+                            border-radius: 25px; 
+                            resize: none; 
+                            outline: none; 
+                            font-family: inherit; 
+                            font-size: 0.95rem; 
+                            line-height: 1.4;
+                            background: #f8fafc;
+                            transition: all 0.2s ease;
+                        "
+                        onkeydown="handleKeyDown(event)"
+                        oninput="autoResize(this)"
+                        onfocus="this.style.background='white'; this.style.borderColor='#667eea';"
+                        onblur="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0';"
+                    ></textarea>
+                    <button 
+                        id="sendButton"
+                        onclick="sendMessage()" 
+                        style="
+                            position: absolute; 
+                            right: 8px; 
+                            bottom: 8px; 
+                            width: 36px; 
+                            height: 36px; 
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            border: none; 
+                            border-radius: 50%; 
+                            color: white; 
+                            cursor: pointer; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            transition: all 0.2s ease;
+                            opacity: 0.7;
+                        "
+                        onmouseover="this.style.opacity='1'; this.style.transform='scale(1.05)'"
+                        onmouseout="this.style.opacity='0.7'; this.style.transform='scale(1)'"
+                        disabled
+                    >
+                        <span style="font-size: 1.1rem;">↗</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Typing Indicator (hidden by default) -->
+            <div id="typingIndicator" style="display: none; margin-top: 12px; padding-left: 48px;">
+                <div style="display: flex; align-items: center; gap: 8px; color: #6b7280; font-size: 0.9rem;">
+                    <div style="display: flex; gap: 2px;">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                    <span>AI is thinking...</span>
+                </div>
             </div>
         </div>
-        <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #48bb78;">
-            <h3>Smart Troubleshooting</h3>
-            <p>AI-powered problem detection and resolution recommendations.</p>
-            <div style="margin-top: 15px;">
-                <span class="status-indicator status-online"></span>Diagnostics Active
-            </div>
-        </div>
-        <div style="padding: 20px; background: #f7fafc; border-radius: 8px; border-left: 4px solid #ed8936;">
-            <h3>Resource Optimization</h3>
-            <p>Get recommendations for optimal resource allocation and scaling.</p>
-            <div style="margin-top: 15px;">
-                <span class="status-indicator status-warning"></span>Monitoring
-            </div>
-        </div>
+        
     </div>
-    <div style="margin-top: 30px; padding: 20px; background: #e6fffa; border-radius: 8px;">
-        <h3>Quick Actions</h3>
-        <div style="display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap;">
-            <button class="card-button" style="width: auto; padding: 10px 20px;">Analyze Cluster</button>
-            <button class="card-button" style="width: auto; padding: 10px 20px;">Check Pod Health</button>
-            <button class="card-button" style="width: auto; padding: 10px 20px;">Resource Report</button>
-        </div>
-    </div>
+    
+    <style>
+    /* Typing indicator animation */
+    .typing-dot {
+        width: 6px;
+        height: 6px;
+        background: #667eea;
+        border-radius: 50%;
+        animation: typing 1.4s infinite ease-in-out;
+    }
+    
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+    
+    @keyframes typing {
+        0%, 80%, 100% { 
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+        40% { 
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    /* Chat message animations */
+    .message-fade-in {
+        animation: fadeInUp 0.3s ease-out;
+    }
+    
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Scrollbar styling */
+    #chatMessages::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #chatMessages::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+    }
+    
+    #chatMessages::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+    
+    #chatMessages::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+    </style>
+    
+    <script>
+    let isWaitingForResponse = false;
+    
+    // Auto-resize textarea
+    function autoResize(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        
+        // Enable/disable send button based on content
+        const sendButton = document.getElementById('sendButton');
+        const hasContent = textarea.value.trim().length > 0;
+        sendButton.disabled = !hasContent || isWaitingForResponse;
+        sendButton.style.opacity = (hasContent && !isWaitingForResponse) ? '1' : '0.7';
+    }
+    
+    // Handle Enter key
+    function handleKeyDown(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+    
+    // Send message function
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const message = input.value.trim();
+        
+        if (!message || isWaitingForResponse) return;
+        
+        // Add user message to chat
+        addMessage(message, 'user');
+        
+        // Clear input and reset height
+        input.value = '';
+        input.style.height = '50px';
+        
+        // Show typing indicator
+        showTypingIndicator();
+        
+        // Disable input during response
+        isWaitingForResponse = true;
+        input.disabled = true;
+        document.getElementById('sendButton').disabled = true;
+        document.getElementById('sendButton').style.opacity = '0.5';
+        
+        // Simulate AI response (replace with actual API call later)
+        setTimeout(() => {
+            hideTypingIndicator();
+            addMessage("I'm a placeholder response. The AI backend will be integrated later. You asked: '" + message + "'", 'assistant');
+            
+            // Re-enable input
+            isWaitingForResponse = false;
+            input.disabled = false;
+            input.focus();
+            autoResize(input);
+        }, 2000);
+    }
+    
+    // Add message to chat
+    function addMessage(text, sender) {
+        const chatMessages = document.getElementById('chatMessages');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message-fade-in';
+        
+        if (sender === 'user') {
+            messageDiv.innerHTML = `
+                <div style="display: flex; align-items: flex-start; gap: 12px; justify-content: flex-end;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; border-radius: 18px 18px 4px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 80%; line-height: 1.5;">
+                        <p style="margin: 0;">${text}</p>
+                    </div>
+                    <div style="width: 36px; height: 36px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <span style="color: #4a5568; font-size: 1.2rem;">👤</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div style="display: flex; align-items: flex-start; gap: 12px;">
+                    <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <span style="color: white; font-size: 1.2rem;">🤖</span>
+                    </div>
+                    <div style="background: white; padding: 16px 20px; border-radius: 18px 18px 18px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 80%; line-height: 1.5;">
+                        <p style="margin: 0; color: #2d3748;">${text}</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // Show typing indicator
+    function showTypingIndicator() {
+        document.getElementById('typingIndicator').style.display = 'block';
+    }
+    
+    // Hide typing indicator
+    function hideTypingIndicator() {
+        document.getElementById('typingIndicator').style.display = 'none';
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('chatInput').focus();
+    });
+    </script>
     """
     return render_template_string(dashboard_template,
                                 title="K8s AI Assistant - Kubernetes AI Dashboard",
                                 page="assistant",
-                                page_title="K8s AI Assistant",
+                                page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
