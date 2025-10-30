@@ -22,6 +22,13 @@ MIB_PER_GIB = 1024
 # Global command logs storage
 command_logs = []
 
+# Global cache for cluster context
+cluster_cache = {
+    'data': None,
+    'timestamp': None,
+    'cache_duration': 30  # Cache for 30 seconds
+}
+
 def log_command(command, status="Running", details=""):
     """Log a command execution with timestamp."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1794,9 +1801,65 @@ def execute_kubectl():
     result = execute_kubectl_command(command)
     return jsonify(result)
 
+def get_cluster_context(use_cache=True):
+    """Get current cluster context from VM and Pod data with caching."""
+    global cluster_cache
+    
+    # Check cache validity
+    if use_cache and cluster_cache['data'] is not None and cluster_cache['timestamp'] is not None:
+        elapsed = (datetime.datetime.now() - cluster_cache['timestamp']).total_seconds()
+        if elapsed < cluster_cache['cache_duration']:
+            return cluster_cache['data']
+    
+    context = {
+        'vms': [],
+        'pods': [],
+        'summary': {}
+    }
+    
+    try:
+        # Get VM data (lightweight - only names and roles for speed)
+        for vm_config in VM_LIST:
+            context['vms'].append({
+                'name': vm_config['name'],
+                'role': vm_config['role'],
+                'status': 'Available'  # Assume available unless we need details
+            })
+        
+        # Get Pod data (this is already relatively fast)
+        pods_data, _ = get_pods_info()
+        context['pods'] = pods_data
+        
+        # Calculate summary
+        context['summary'] = {
+            'total_vms': len(VM_LIST),
+            'active_vms': len(VM_LIST),  # Assume all active for quick response
+            'total_pods': len(pods_data),
+            'running_pods': sum(1 for pod in pods_data if pod['status'] == 'Running'),
+            'pending_pods': sum(1 for pod in pods_data if pod['status'] == 'Pending'),
+            'failed_pods': sum(1 for pod in pods_data if pod['status'] == 'Failed')
+        }
+        
+        # Update cache
+        cluster_cache['data'] = context
+        cluster_cache['timestamp'] = datetime.datetime.now()
+        
+    except Exception as e:
+        context['error'] = str(e)
+    
+    return context
+
+def execute_kubectl_tool(command):
+    """Execute kubectl command and return result."""
+    result = execute_kubectl_command(command)
+    if result['success']:
+        return result['output']
+    else:
+        return f"Error executing command: {result['error']}"
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """API endpoint for AI chat."""
+    """API endpoint for AI chat with cluster awareness."""
     try:
         data = request.get_json()
         message = data.get('message', '')
@@ -1811,14 +1874,116 @@ def chat():
             return jsonify({'success': False, 'error': 'Anthropic API key not configured'})
         
         try:
+            # Get current cluster context
+            cluster_context = get_cluster_context()
+            
+            # Check if user is asking for detailed pod list
+            message_lower = message.lower()
+            if any(keyword in message_lower for keyword in ['list all pods', 'show all pods', 'get all pods', 'list pods']):
+                # Directly provide the pod list from cached data
+                response_text = "Here are all the pods in your cluster:<br><br>"
+                
+                if cluster_context['pods']:
+                    # Group by namespace
+                    namespaces = {}
+                    for pod in cluster_context['pods']:
+                        ns = pod['namespace']
+                        if ns not in namespaces:
+                            namespaces[ns] = []
+                        namespaces[ns].append(pod)
+                    
+                    # Format output with HTML breaks for proper line separation
+                    for ns in sorted(namespaces.keys()):
+                        response_text += f"<strong>{ns.upper()} namespace:</strong><br>"
+                        for pod in namespaces[ns]:
+                            status_emoji = "✅" if pod['status'] == 'Running' else "⚠️" if pod['status'] == 'Pending' else "❌"
+                            response_text += f"&nbsp;&nbsp;{status_emoji} {pod['name']}<br>"
+                            response_text += f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Status: {pod['status']} | Ready: {pod['ready']} | Restarts: {pod['restarts']}<br>"
+                        response_text += "<br>"
+                    
+                    response_text += f"<strong>Summary:</strong> {cluster_context['summary']['total_pods']} total pods - "
+                    response_text += f"{cluster_context['summary']['running_pods']} running, "
+                    response_text += f"{cluster_context['summary']['pending_pods']} pending, "
+                    response_text += f"{cluster_context['summary']['failed_pods']} failed"
+                else:
+                    response_text = "No pods found in the cluster."
+                
+                return jsonify({'success': True, 'response': response_text, 'context_used': True})
+            
+            # For other questions, use Claude with context
+            context_message = f"""You are a Kubernetes cluster assistant.
+
+CLUSTER STATUS:
+- VMs: {cluster_context['summary']['active_vms']} active ({', '.join([vm['name'] + ' (' + vm['role'] + ')' for vm in cluster_context['vms']])})
+- Total Pods: {cluster_context['summary']['total_pods']} (Running: {cluster_context['summary']['running_pods']}, Pending: {cluster_context['summary']['pending_pods']}, Failed: {cluster_context['summary']['failed_pods']})
+"""
+            
+            # Add namespace summary
+            if cluster_context['pods']:
+                namespaces = {}
+                for pod in cluster_context['pods']:
+                    ns = pod['namespace']
+                    if ns not in namespaces:
+                        namespaces[ns] = {'total': 0, 'running': 0}
+                    namespaces[ns]['total'] += 1
+                    if pod['status'] == 'Running':
+                        namespaces[ns]['running'] += 1
+                
+                context_message += f"- Namespaces: "
+                ns_summary = [f"{ns} ({data['running']}/{data['total']})" for ns, data in namespaces.items()]
+                context_message += ', '.join(ns_summary) + "\n"
+            
+            context_message += f"""
+
+IMPORTANT: 
+- Be concise and conversational
+- Answer directly without suggesting kubectl commands
+- If you need pod details, I already have them - just ask me to "list all pods"
+- Use proper markdown formatting (**, bullets, etc.)
+
+User: {message}"""
+
             from anthropic import Anthropic
             client = Anthropic(api_key=anthropic_api_key)
             message_response = client.messages.create(
                 model="claude-3-haiku-20240307",
-                max_tokens=1024,
-                messages=[{"role": "user", "content": message}]
+                max_tokens=2048,
+                messages=[{"role": "user", "content": context_message}]
             )
-            return jsonify({'success': True, 'response': message_response.content[0].text})
+            
+            response_text = message_response.content[0].text
+            
+            # Check if Claude is asking for more details that we might need kubectl for
+            if "kubectl" in response_text and any(word in response_text.lower() for word in ['describe', 'logs', 'events']):
+                # Extract and execute kubectl command
+                import re
+                kubectl_pattern = r'kubectl\s+[^\n`]+'
+                commands = re.findall(kubectl_pattern, response_text)
+                
+                if commands:
+                    command = commands[0].replace('kubectl ', '').strip()
+                    kubectl_result = execute_kubectl_tool(command)
+                    
+                    # Get final answer with kubectl results
+                    followup_message = f"""Command output:
+
+{kubectl_result[:2000]}
+
+Provide a concise answer to: {message}"""
+                    
+                    followup_response = client.messages.create(
+                        model="claude-3-haiku-20240307",
+                        max_tokens=2048,
+                        messages=[
+                            {"role": "user", "content": context_message},
+                            {"role": "assistant", "content": response_text},
+                            {"role": "user", "content": followup_message}
+                        ]
+                    )
+                    response_text = followup_response.content[0].text
+            
+            return jsonify({'success': True, 'response': response_text, 'context_used': True})
+            
         except Exception as e:
             return jsonify({'success': False, 'error': f'Claude API error: {str(e)}'})
             
