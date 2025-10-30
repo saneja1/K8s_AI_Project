@@ -227,7 +227,7 @@ def create_k8s_multiagent_system(api_key: Optional[str] = None, verbose: bool = 
         
         # Initialize Claude LLM
         llm = ChatAnthropic(
-            model="claude-3-5-sonnet-20241022",  # Latest Claude 3.5 Sonnet
+            model="claude-3-haiku-20240307",  # Claude 3 Haiku
             anthropic_api_key=actual_api_key,
             temperature=0.2,
             max_tokens=4096

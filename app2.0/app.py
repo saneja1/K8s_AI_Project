@@ -1814,7 +1814,7 @@ def chat():
             from anthropic import Anthropic
             client = Anthropic(api_key=anthropic_api_key)
             message_response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-haiku-20240307",
                 max_tokens=1024,
                 messages=[{"role": "user", "content": message}]
             )
