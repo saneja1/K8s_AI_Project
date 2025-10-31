@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Import K8s Agent
+import sys
+sys.path.append(os.path.dirname(__file__))
+from agents.k8s_agent import ask_k8s_agent
+
 app = Flask(__name__)
 
 # VM Configuration - from dashboard.py
@@ -1859,7 +1864,7 @@ def execute_kubectl_tool(command):
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """API endpoint for AI chat with cluster awareness."""
+    """API endpoint for AI chat using LangGraph K8s Agent."""
     try:
         data = request.get_json()
         message = data.get('message', '')
@@ -1867,125 +1872,36 @@ def chat():
         if not message:
             return jsonify({'success': False, 'error': 'No message provided'})
         
-        # Get Claude API key
+        # Get Anthropic API key
         anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
         
         if not anthropic_api_key:
             return jsonify({'success': False, 'error': 'Anthropic API key not configured'})
         
         try:
-            # Get current cluster context
-            cluster_context = get_cluster_context()
+            # Use LangGraph K8s Agent for intelligent responses
+            log_command(f"AI Agent Query: {message[:100]}...", "Running", "Processing with K8s Agent")
             
-            # Check if user is asking for detailed pod list
-            message_lower = message.lower()
-            if any(keyword in message_lower for keyword in ['list all pods', 'show all pods', 'get all pods', 'list pods']):
-                # Directly provide the pod list from cached data
-                response_text = "Here are all the pods in your cluster:<br><br>"
-                
-                if cluster_context['pods']:
-                    # Group by namespace
-                    namespaces = {}
-                    for pod in cluster_context['pods']:
-                        ns = pod['namespace']
-                        if ns not in namespaces:
-                            namespaces[ns] = []
-                        namespaces[ns].append(pod)
-                    
-                    # Format output with HTML breaks for proper line separation
-                    for ns in sorted(namespaces.keys()):
-                        response_text += f"<strong>{ns.upper()} namespace:</strong><br>"
-                        for pod in namespaces[ns]:
-                            status_emoji = "✅" if pod['status'] == 'Running' else "⚠️" if pod['status'] == 'Pending' else "❌"
-                            response_text += f"&nbsp;&nbsp;{status_emoji} {pod['name']}<br>"
-                            response_text += f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Status: {pod['status']} | Ready: {pod['ready']} | Restarts: {pod['restarts']}<br>"
-                        response_text += "<br>"
-                    
-                    response_text += f"<strong>Summary:</strong> {cluster_context['summary']['total_pods']} total pods - "
-                    response_text += f"{cluster_context['summary']['running_pods']} running, "
-                    response_text += f"{cluster_context['summary']['pending_pods']} pending, "
-                    response_text += f"{cluster_context['summary']['failed_pods']} failed"
-                else:
-                    response_text = "No pods found in the cluster."
-                
-                return jsonify({'success': True, 'response': response_text, 'context_used': True})
+            result = ask_k8s_agent(question=message, api_key=anthropic_api_key, verbose=False)
             
-            # For other questions, use Claude with context
-            context_message = f"""You are a Kubernetes cluster assistant.
-
-CLUSTER STATUS:
-- VMs: {cluster_context['summary']['active_vms']} active ({', '.join([vm['name'] + ' (' + vm['role'] + ')' for vm in cluster_context['vms']])})
-- Total Pods: {cluster_context['summary']['total_pods']} (Running: {cluster_context['summary']['running_pods']}, Pending: {cluster_context['summary']['pending_pods']}, Failed: {cluster_context['summary']['failed_pods']})
-"""
+            # Format response with HTML for proper display
+            answer = result['answer']
             
-            # Add namespace summary
-            if cluster_context['pods']:
-                namespaces = {}
-                for pod in cluster_context['pods']:
-                    ns = pod['namespace']
-                    if ns not in namespaces:
-                        namespaces[ns] = {'total': 0, 'running': 0}
-                    namespaces[ns]['total'] += 1
-                    if pod['status'] == 'Running':
-                        namespaces[ns]['running'] += 1
-                
-                context_message += f"- Namespaces: "
-                ns_summary = [f"{ns} ({data['running']}/{data['total']})" for ns, data in namespaces.items()]
-                context_message += ', '.join(ns_summary) + "\n"
+            # Convert markdown-style formatting to HTML
+            answer = answer.replace('\n\n', '<br><br>')
+            answer = answer.replace('\n', '<br>')
             
-            context_message += f"""
-
-IMPORTANT: 
-- Be concise and conversational
-- Answer directly without suggesting kubectl commands
-- If you need pod details, I already have them - just ask me to "list all pods"
-- Use proper markdown formatting (**, bullets, etc.)
-
-User: {message}"""
-
-            from anthropic import Anthropic
-            client = Anthropic(api_key=anthropic_api_key)
-            message_response = client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=2048,
-                messages=[{"role": "user", "content": context_message}]
-            )
+            log_command(f"AI Agent Query", "✅ Success", f"Response generated successfully")
             
-            response_text = message_response.content[0].text
-            
-            # Check if Claude is asking for more details that we might need kubectl for
-            if "kubectl" in response_text and any(word in response_text.lower() for word in ['describe', 'logs', 'events']):
-                # Extract and execute kubectl command
-                import re
-                kubectl_pattern = r'kubectl\s+[^\n`]+'
-                commands = re.findall(kubectl_pattern, response_text)
-                
-                if commands:
-                    command = commands[0].replace('kubectl ', '').strip()
-                    kubectl_result = execute_kubectl_tool(command)
-                    
-                    # Get final answer with kubectl results
-                    followup_message = f"""Command output:
-
-{kubectl_result[:2000]}
-
-Provide a concise answer to: {message}"""
-                    
-                    followup_response = client.messages.create(
-                        model="claude-3-haiku-20240307",
-                        max_tokens=2048,
-                        messages=[
-                            {"role": "user", "content": context_message},
-                            {"role": "assistant", "content": response_text},
-                            {"role": "user", "content": followup_message}
-                        ]
-                    )
-                    response_text = followup_response.content[0].text
-            
-            return jsonify({'success': True, 'response': response_text, 'context_used': True})
+            return jsonify({
+                'success': True, 
+                'response': answer,
+                'agent_used': True
+            })
             
         except Exception as e:
-            return jsonify({'success': False, 'error': f'Claude API error: {str(e)}'})
+            log_command(f"AI Agent Query", "❌ Failed", f"Error: {str(e)}")
+            return jsonify({'success': False, 'error': f'Agent error: {str(e)}'})
             
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})

@@ -1,3 +1,8 @@
 Flask
 python-dotenv
 anthropic
+
+# LangGraph Agent Framework (for K8s AI Agent) - Compatible versions
+langgraph>=0.2.40
+langchain>=0.3.0
+langchain-anthropic>=0.3.0
