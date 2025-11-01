@@ -170,9 +170,9 @@ def describe_pod(pod_name: str, namespace: str = "default") -> str:
 @tool
 def get_pod_logs(pod_name: str, namespace: str = "default", tail: int = 50) -> str:
     """
-    Get logs from a specific pod.
+    Get logs from a specific pod. If partial pod name is given, finds the full name automatically.
     Args:
-        pod_name: Name of the pod
+        pod_name: Full or partial name of the pod (e.g., 'etcd' or 'etcd-k8s-master-001...')
         namespace: Namespace of the pod (default: "default")
         tail: Number of recent log lines to retrieve (default: 50)
     Returns:
@@ -181,7 +181,28 @@ def get_pod_logs(pod_name: str, namespace: str = "default", tail: int = 50) -> s
     import subprocess
     
     try:
-        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs {pod_name} -n {namespace} --tail={tail}"
+        # First, try to find the full pod name if partial name given
+        get_pods_cmd = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o name"
+        pods_result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a",
+            f"--command={get_pods_cmd}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=8)
+        
+        if pods_result.returncode == 0:
+            # Find matching pod name
+            full_pod_name = pod_name
+            for line in pods_result.stdout.strip().split('\n'):
+                if pod_name.lower() in line.lower():
+                    # Extract pod name (remove 'pod/' prefix)
+                    full_pod_name = line.replace('pod/', '').strip()
+                    break
+        else:
+            full_pod_name = pod_name
+        
+        # Get logs with the full pod name
+        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs {full_pod_name} -n {namespace} --tail={tail}"
         
         result = subprocess.run([
             "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
