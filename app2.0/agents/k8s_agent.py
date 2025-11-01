@@ -13,6 +13,7 @@ from langgraph.graph import StateGraph, MessagesState
 
 # Import specialized agents
 from .health_agent import ask_health_agent
+from .describe_agent import ask_describe_agent
 
 # Load environment variables
 load_dotenv()
@@ -86,14 +87,24 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
 Query: "{user_question}"
 
 Categories:
-1. HEALTH - cluster health, node status, pod counts, events, errors, warnings, ready state
-2. RESOURCES - CPU, memory, disk, capacity, resource allocation, limits, requests
-3. DESCRIBE - detailed info about specific pods, nodes, deployments, services
+1. HEALTH - node health status, cluster events, errors, warnings (node-level only)
+2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests
+3. DESCRIBE - list/count/describe ANY K8s resources (pods, services, deployments, namespaces, etc.)
 4. MONITOR - performance metrics, resource usage over time, trends
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
 6. OPERATIONS - scaling, updates, rollouts, restarts, maintenance
 
-Respond with ONLY the category name (e.g., "HEALTH" or "RESOURCES").
+IMPORTANT ROUTING RULES:
+- "list pods/services/deployments" → DESCRIBE
+- "how many pods/services" → DESCRIBE
+- "describe pod/service/deployment" → DESCRIBE
+- "what namespaces exist" → DESCRIBE
+- "show me all X" → DESCRIBE (where X is any K8s resource)
+- "is cluster healthy" or "node status" → HEALTH
+- "any errors/warnings" → HEALTH
+- "CPU/memory capacity" → RESOURCES
+
+Respond with ONLY the category name (e.g., "HEALTH" or "DESCRIBE").
 """
         
         # Ask LLM to classify
@@ -109,6 +120,15 @@ Respond with ONLY the category name (e.g., "HEALTH" or "RESOURCES").
                 return {"messages": [AIMessage(content=answer)]}
             except Exception as e:
                 return {"messages": [AIMessage(content=f"Error routing to Health Agent: {str(e)}")]}
+        
+        elif "DESCRIBE" in category:
+            # Call Describe Agent
+            try:
+                result = ask_describe_agent(user_question, api_key=anthropic_api_key, verbose=verbose)
+                answer = result.get('answer', 'No response from Describe Agent')
+                return {"messages": [AIMessage(content=answer)]}
+            except Exception as e:
+                return {"messages": [AIMessage(content=f"Error routing to Describe Agent: {str(e)}")]}
         
         elif "RESOURCES" in category:
             return {"messages": [AIMessage(content="Resources Agent is not yet implemented. This would handle CPU/memory/capacity queries.")]}
