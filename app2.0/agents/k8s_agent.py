@@ -1,7 +1,6 @@
 """
 Kubernetes Supervisor Agent using LangGraph
-Single agent that manages all Kubernetes operations - following the sample pattern
-Tools are now separated in k8s_tools.py for better organization
+Supervisor that delegates to specialized agents (no direct tools)
 """
 
 import os
@@ -9,17 +8,11 @@ from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, MessagesState
 
-# Import tools from separate file
-from .k8s_tools import (
-    get_cluster_pods,
-    get_cluster_nodes,
-    describe_node,
-    describe_pod,
-    get_pod_logs,
-    get_cluster_events,
-    count_pods_on_node,
-    count_resources
-)
+# Tools are now in specialized agents, not here
+# from .k8s_tools import (...)
+
+# Import specialized agents
+from .health_agent import ask_health_agent
 
 # Load environment variables
 load_dotenv()
@@ -55,192 +48,93 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
     )
     
     # ========================================================================
-    # DEFINE TOOLS (Already decorated with @tool above)
+    # TOOLS NOW IN SPECIALIZED AGENTS
     # ========================================================================
     
-    tools = [get_cluster_pods, get_cluster_nodes, describe_node, describe_pod, get_pod_logs, get_cluster_events, count_pods_on_node, count_resources]
+    # Tools are no longer bound to supervisor
+    # tools = [get_cluster_pods, get_cluster_nodes, describe_node, describe_pod, get_pod_logs, get_cluster_events, count_pods_on_node, count_resources]
     
-    # Bind tools to model (LangGraph pattern)
-    model_with_tools = model.bind_tools(tools)
+    # No tool binding - supervisor will route to specialized agents instead
+    # model_with_tools = model.bind_tools(tools)
     
     # ========================================================================
-    # CREATE AGENT NODE FUNCTION (Manual replacement for create_react_agent)
+    # CREATE ROUTING SUPERVISOR NODE
     # ========================================================================
     
     def k8s_supervisor_node(state):
         """
-        Kubernetes supervisor agent node - handles all K8s operations.
-        This replaces create_react_agent functionality.
+        Kubernetes supervisor that routes queries to specialized agents.
+        Uses LLM to classify the query and delegate to appropriate agent.
         """
-        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
         
         messages = state["messages"]
         
-        # Add system prompt for this agent (optimized for speed)
-        system_msg = """You are a Kubernetes agent that MUST use tools to get real-time cluster data.
+        # Get the user's question
+        user_question = None
+        for msg in reversed(messages):
+            if isinstance(msg, HumanMessage):
+                user_question = msg.content
+                break
+        
+        if not user_question:
+            return {"messages": [AIMessage(content="I didn't receive a question. Please ask me about your Kubernetes cluster.")]}
+        
+        # Routing logic: Classify which agent should handle this query
+        routing_prompt = f"""Classify this Kubernetes query into ONE category:
 
-CRITICAL: You MUST call the appropriate tool for EVERY question. NEVER guess or use cached knowledge.
+Query: "{user_question}"
 
-AVAILABLE TOOLS:
-- get_cluster_pods: List all pods with their NODE location (use this to see which pods are on which node)
-  * ALWAYS use namespace='all' to see ALL pods across all namespaces (kube-system, default, etc.)
-  * Only use a specific namespace if user explicitly asks for one namespace
-- get_cluster_nodes: Show nodes with ONLY basic info (status, roles, version) - NO capacity/taints/labels
-- describe_node: Get DETAILED node information including TAINTS, LABELS, CAPACITY, ALLOCATABLE resources, CONDITIONS
-- describe_pod: Get pod details
-- get_pod_logs: Retrieve logs
-- get_cluster_events: Show events
-- count_pods_on_node: **USE THIS for counting pods on a specific node** (e.g., 'k8s-master-001', 'k8s-worker-01')
-- count_resources: **FLEXIBLE counting tool** for any resource type with filtering
-  * Examples: count_resources('pods', 'status', 'Running') -> running pods
-  * count_resources('pods', 'namespace', 'kube-system') -> pods in namespace
-  * count_resources('pods', 'ready', '0/1') -> not ready pods
-  * Works with: pods, nodes, services, deployments
-  * Filters: status, namespace, node, ready, name, age, ip
+Categories:
+1. HEALTH - cluster health, node status, pod counts, events, errors, warnings, ready state
+2. RESOURCES - CPU, memory, disk, capacity, resource allocation, limits, requests
+3. DESCRIBE - detailed info about specific pods, nodes, deployments, services
+4. MONITOR - performance metrics, resource usage over time, trends
+5. SECURITY - RBAC, roles, permissions, network policies, secrets
+6. OPERATIONS - scaling, updates, rollouts, restarts, maintenance
 
-IMPORTANT - Tool Selection:
-- For CAPACITY, MEMORY, CPU resources → use describe_node tool (NOT get_cluster_nodes)
-- For TAINTS, LABELS → use describe_node tool
-- For basic node list/status → use get_cluster_nodes tool
-- To LIST pods on a node: Find ALL rows where the NODE column (not NAME column) contains that node name
-- To COUNT pods on a node: Count ALL rows where the NODE column matches that node name
-- The NODE column is typically the 6th or 7th column in kubectl output
-- Pod names are in NAME column (column 2), but node location is in NODE column
-- Example: "kube-flannel-ds-vbnxb" running on "k8s-master-001" - check NODE column, not NAME
-- CRITICAL PROCESS for counting/listing pods on a specific node:
-  1. Call get_cluster_pods with namespace='all' to get ALL pods
-  2. The kubectl output may have WORD-WRAPPED LINES due to terminal width
-  3. Each pod is represented by a data row that contains: NAMESPACE, NAME, READY, STATUS, RESTARTS, AGE, IP, NODE columns
-  4. The NODE column value tells you which node the pod runs on (e.g., "k8s-master-001" or "k8s-worker-01")
-  5. IMPORTANT: Some lines may be split/wrapped - look for the NODE column value in each pod's data
-  6. To count pods on a specific node: Search the entire output and count EVERY occurrence of that exact NODE name
-     - Example: If you find "k8s-worker-01" 3 times → answer is 3 pods
-     - DO NOT subtract or exclude any pods - if the node name appears, count it
-  7. To list pods on a specific node: Find each occurrence of that NODE name, then look for the NAME column value in that same pod's data
-  8. Do NOT filter by pod NAME containing "master" or "worker" - check the NODE column value instead
-  9. CRITICAL: DaemonSet pods (kube-flannel-ds-*, kube-proxy-*, kube-system pods) MUST be counted - they are real pods running on that node
-- Example node names: k8s-master-001, k8s-worker-01
-- Example pod types that DON'T have node names in their pod names:
-  * kube-flannel-ds-* (runs on all nodes via DaemonSet)
-  * kube-proxy-* (runs on all nodes via DaemonSet)
-  * coredns-* (typically runs on master/control-plane)
-  * Application pods (can run on any node)
-
-WORKFLOW:
-1. User asks a question
-2. You MUST call the appropriate tool that has the needed information
-3. If comparing MULTIPLE nodes/pods, call the tool MULTIPLE TIMES (once for each)
-4. After getting tool results, analyze the data and provide the answer
-5. If the tool output doesn't contain what you need, say so - DON'T guess
-
-RESPONSE RULES:
-- Answer directly without mentioning which tool you used
-- Be brief and to the point
-- When LISTING pods: Include EVERY pod where NODE column matches - don't skip any (especially kube-flannel and kube-proxy)
-- When COUNTING pods: Count EVERY row where NODE column matches
-- When listing pods on master: MUST include kube-flannel-ds-vbnxb, kube-proxy-2z4vj, AND all pods with "master" in name
-- For CAPACITY: extract CPU and memory from describe_node output
-- For TAINTS: extract from describe_node output and show the taint key, value, and effect
-- If tools don't provide the needed information, say: "I don't have access to that information."
-
-Examples:
-User: "how many pods are on master node" 
-  → Call count_pods_on_node(node_name='k8s-master-001')
-  → "There are X pods running on the master node."
-
-User: "how many pods are on worker node" 
-  → Call count_pods_on_node(node_name='k8s-worker-01')
-  → "There are X pods running on the worker node."
-
-User: "list the pods on master node" 
-  → Call count_pods_on_node(node_name='k8s-master-001')
-  → Extract pod names from the result and list them
-  
-User: "list the pods on worker node" 
-  → Call count_pods_on_node(node_name='k8s-worker-01')
-  → Extract pod names from the result and list them
-User: "which node has more capacity" → 
-  Step 1: Call describe_node with node_name='k8s-master-001'
-  Step 2: Call describe_node with node_name='k8s-worker-01'
-  Step 3: Compare CPU/memory capacity from both results
-  Response: "Both nodes have the same capacity with 2 CPU cores and 4GB memory each." OR "The master node has more capacity..."
-User: "are there taints on master node" → Call describe_node with node_name='k8s-master-001', then: "No, there are no taints on the master node." OR "Yes, the master node has taint: node-role.kubernetes.io/control-plane:NoSchedule"
+Respond with ONLY the category name (e.g., "HEALTH" or "RESOURCES").
 """
         
-        # Check if we already have tool results and need to generate final answer
-        has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
-        last_message = messages[-1]
-        has_pending_tool_calls = hasattr(last_message, 'tool_calls') and last_message.tool_calls
+        # Ask LLM to classify
+        classification_response = model.invoke([HumanMessage(content=routing_prompt)])
+        category = classification_response.content.strip().upper()
         
-        # If we have tool results but no pending tool calls, force a final answer
-        if has_tool_results and not has_pending_tool_calls:
-            # Add instruction to summarize
-            messages_with_system = [SystemMessage(content=system_msg)] + messages + [
-                HumanMessage(content="Provide a direct, concise answer to the user's question. Don't mention the tools or say 'based on the output'.")
-            ]
-            response = model_with_tools.invoke(messages_with_system)
+        # Route to appropriate agent
+        if "HEALTH" in category:
+            # Call Health Agent
+            try:
+                result = ask_health_agent(user_question, api_key=anthropic_api_key, verbose=verbose)
+                answer = result.get('answer', 'No response from Health Agent')
+                return {"messages": [AIMessage(content=answer)]}
+            except Exception as e:
+                return {"messages": [AIMessage(content=f"Error routing to Health Agent: {str(e)}")]}
+        
+        elif "RESOURCES" in category:
+            return {"messages": [AIMessage(content="Resources Agent is not yet implemented. This would handle CPU/memory/capacity queries.")]}
+        
+        elif "DESCRIBE" in category:
+            return {"messages": [AIMessage(content="Describe Agent is not yet implemented. This would handle detailed pod/node information queries.")]}
+        
+        elif "MONITOR" in category:
+            return {"messages": [AIMessage(content="Monitor Agent is not yet implemented. This would handle performance metrics queries.")]}
+        
+        elif "SECURITY" in category:
+            return {"messages": [AIMessage(content="Security Agent is not yet implemented. This would handle RBAC/security queries.")]}
+        
+        elif "OPERATIONS" in category:
+            return {"messages": [AIMessage(content="Operations Agent is not yet implemented. This would handle scaling/updates queries.")]}
+        
         else:
-            # Normal flow - add system message if not present
-            if not messages or not isinstance(messages[0], SystemMessage):
-                messages = [SystemMessage(content=system_msg)] + messages
-            
-            # Call model with tools
-            response = model_with_tools.invoke(messages)
-        
-        return {"messages": [response]}
+            return {"messages": [AIMessage(content=f"I couldn't classify your query (detected: {category}). Please try rephrasing your question about cluster health, resources, describe, monitor, security, or operations.")]}
     
     # ========================================================================
-    # CREATE TOOL NODE (Manual replacement for ToolNode)
+    # TOOL NODE REMOVED - Tools now in specialized agents
     # ========================================================================
     
-    def tool_node(state):
-        """Execute tools and return results"""
-        from langchain_core.messages import ToolMessage
-        
-        messages = state["messages"]
-        last_message = messages[-1]
-        
-        tool_results = []
-        
-        # Execute tool calls if any
-        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-            for tool_call in last_message.tool_calls:
-                tool_name = tool_call["name"]
-                tool_args = tool_call.get("args", {})
-                
-                # Find and execute the tool
-                tool_found = False
-                for tool in tools:
-                    if tool.name == tool_name:
-                        tool_found = True
-                        try:
-                            # Use .invoke() for LangChain tools
-                            result = tool.invoke(tool_args)
-                            tool_results.append(
-                                ToolMessage(
-                                    content=str(result),
-                                    tool_call_id=tool_call["id"]
-                                )
-                            )
-                        except Exception as e:
-                            tool_results.append(
-                                ToolMessage(
-                                    content=f"Error executing {tool_name}: {str(e)}",
-                                    tool_call_id=tool_call["id"]
-                                )
-                            )
-                        break
-                
-                # If tool not found, return error message for this tool_call_id
-                if not tool_found:
-                    tool_results.append(
-                        ToolMessage(
-                            content=f"Tool '{tool_name}' not found",
-                            tool_call_id=tool_call["id"]
-                        )
-                    )
-        
-        return {"messages": tool_results}
+    # def tool_node(state):
+    #     """Execute tools and return results"""
+    #     ... (removed - supervisor no longer executes tools directly)
     
     # ========================================================================
     # BUILD LANGGRAPH WORKFLOW (Following Sample Pattern)
@@ -249,32 +143,21 @@ User: "are there taints on master node" → Call describe_node with node_name='k
     # Create the graph with recursion limit
     workflow = StateGraph(MessagesState)
     
-    # Add nodes
+    # Add only supervisor node (no tools node)
     workflow.add_node("k8s_supervisor", k8s_supervisor_node)
-    workflow.add_node("tools", tool_node)
+    # workflow.add_node("tools", tool_node)  # Removed - tools in specialized agents
     
-    # Define the flow
+    # Define the flow - supervisor directly to END (no tool execution)
     workflow.set_entry_point("k8s_supervisor")
     
-    # Add conditional edge with better stopping logic
-    def should_continue(state):
-        messages = state["messages"]
-        last_message = messages[-1]
-        
-        # Check if we have tool calls to execute
-        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-            # Count how many times we've already called tools
-            tool_call_count = sum(1 for m in messages if hasattr(m, 'tool_calls') and m.tool_calls)
-            
-            # Stop if we've tried too many times (agent is confused/looping)
-            if tool_call_count > 3:
-                return "__end__"
-            
-            return "tools"
-        return "__end__"
+    # Simplified flow - no conditional edges (supervisor will route to specialized agents later)
+    # def should_continue(state):
+    #     ... (removed - no tools to execute)
     
-    workflow.add_conditional_edges("k8s_supervisor", should_continue, {"tools": "tools", "__end__": "__end__"})
-    workflow.add_edge("tools", "k8s_supervisor")
+    # Direct edge to end
+    workflow.add_edge("k8s_supervisor", "__end__")
+    # workflow.add_conditional_edges("k8s_supervisor", should_continue, {"tools": "tools", "__end__": "__end__"})  # Removed
+    # workflow.add_edge("tools", "k8s_supervisor")  # Removed
     
     return workflow
 
