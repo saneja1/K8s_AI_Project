@@ -49,6 +49,35 @@ def log_command(command, status="Running", details=""):
     if len(command_logs) > 50:
         command_logs[:] = command_logs[-50:]
 
+def _try_answer_from_client_cache(message, client_cache):
+    """
+    Try to answer simple questions using client-side cached data from other tabs.
+    Returns None if cannot answer from cache.
+    """
+    if not client_cache:
+        return None
+    
+    msg_lower = message.lower()
+    
+    # Check for pod count questions
+    if any(phrase in msg_lower for phrase in ['how many pod', 'count pod', 'number of pod', 'list pod', 'show pod']):
+        pods_data = client_cache.get('pods')
+        if pods_data and isinstance(pods_data, list):
+            pod_count = len(pods_data)
+            running = sum(1 for p in pods_data if p.get('status') == 'Running')
+            return f"There are <strong>{pod_count} pods</strong> in the cluster.<br><br>{running} are running, {pod_count - running} are in other states.<br><br><em>⚡ Instant answer from Pod Monitor tab data</em>"
+    
+    # Check for node questions
+    if any(phrase in msg_lower for phrase in ['how many node', 'count node', 'show node', 'list node', 'cluster node']):
+        nodes_data = client_cache.get('nodes')
+        if nodes_data and isinstance(nodes_data, list):
+            node_count = len(nodes_data)
+            ready = sum(1 for n in nodes_data if n.get('status') == 'Ready')
+            return f"There are <strong>{node_count} nodes</strong> in the cluster.<br><br>{ready} are Ready, {node_count - ready} have issues.<br><br><em>⚡ Instant answer from VM Status tab data</em>"
+    
+    # Cannot answer from cache
+    return None
+
 def parse_int(value):
     """Safely parse integers from string values."""
     try:
@@ -778,6 +807,37 @@ def k8s_assistant():
     <script>
     let isWaitingForResponse = false;
     
+    // Get client-side cached data from localStorage (shared across tabs)
+    function getClientCacheData() {
+        try {
+            const cache = {};
+            
+            // Get pods data from Pod Monitor tab
+            const podsCache = localStorage.getItem('k8s_pods_cache');
+            if (podsCache) {
+                const parsed = JSON.parse(podsCache);
+                // Check if cache is fresh (< 2 minutes old)
+                if (parsed.timestamp && (Date.now() - parsed.timestamp) < 120000) {
+                    cache.pods = parsed.data;
+                }
+            }
+            
+            // Get nodes data from VM Status tab
+            const nodesCache = localStorage.getItem('k8s_nodes_cache');
+            if (nodesCache) {
+                const parsed = JSON.parse(nodesCache);
+                if (parsed.timestamp && (Date.now() - parsed.timestamp) < 120000) {
+                    cache.nodes = parsed.data;
+                }
+            }
+            
+            return cache;
+        } catch (e) {
+            console.error('Error reading client cache:', e);
+            return {};
+        }
+    }
+    
     // Auto-resize textarea
     function autoResize(textarea) {
         textarea.style.height = 'auto';
@@ -821,7 +881,7 @@ def k8s_assistant():
         document.getElementById('sendButton').disabled = true;
         document.getElementById('sendButton').style.opacity = '0.5';
         
-        // Send to API
+        // Send to API with client-side cache data
         fetch('/api/chat', {
             method: 'POST',
             headers: {
@@ -829,7 +889,8 @@ def k8s_assistant():
             },
             body: JSON.stringify({
                 message: message,
-                model: 'claude'
+                model: 'claude',
+                clientCache: getClientCacheData()  // Send cached data from other tabs
             })
         })
         .then(response => response.json())
@@ -1288,6 +1349,19 @@ def vm_status():
         const tbody = document.getElementById('vmTableBody');
         let tableRows = '';
         
+        // Cache nodes data in localStorage for AI Assistant
+        try {{
+            const nodesData = vms.map(vm => ({{
+                name: vm.name,
+                status: vm.status,
+                role: vm.role || 'Worker'
+            }}));
+            localStorage.setItem('k8s_nodes_cache', JSON.stringify({{
+                data: nodesData,
+                timestamp: Date.now()
+            }}));
+        }} catch(e) {{ console.error('Cache error:', e); }}
+        
         vms.forEach(vm => {{
             const statusIndicator = vm.status === 'Running' ? 'status-online' : 'status-offline';
             const memoryDisplay = vm.memory_used_gib && vm.memory_total_gib ? 
@@ -1590,6 +1664,14 @@ def pod_monitor():
         const tbody = document.getElementById('podsTableBody');
         let tableRows = '';
         
+        // Cache pods data in localStorage for AI Assistant
+        try {{
+            localStorage.setItem('k8s_pods_cache', JSON.stringify({{
+                data: pods,
+                timestamp: Date.now()
+            }}));
+        }} catch(e) {{ console.error('Cache error:', e); }}
+        
         if (pods.length > 0) {{
             pods.forEach(pod => {{
                 const statusIcon = pod.status === 'Running' ? '🟢' : (pod.status === 'Failed' ? '🔴' : '🟡');
@@ -1864,10 +1946,11 @@ def execute_kubectl_tool(command):
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """API endpoint for AI chat using LangGraph K8s Agent."""
+    """API endpoint for AI chat using LangGraph K8s Agent with smart caching."""
     try:
         data = request.get_json()
         message = data.get('message', '')
+        client_cache = data.get('clientCache', {})  # Client-side cached data from other tabs
         
         if not message:
             return jsonify({'success': False, 'error': 'No message provided'})
@@ -1879,6 +1962,16 @@ def chat():
             return jsonify({'success': False, 'error': 'Anthropic API key not configured'})
         
         try:
+            # Check if we can answer from client cache (instant response)
+            quick_response = _try_answer_from_client_cache(message, client_cache)
+            if quick_response:
+                log_command(f"AI Agent Query", "⚡ Instant", "Answered from client cache")
+                return jsonify({
+                    'success': True,
+                    'response': quick_response,
+                    'source': 'client_cache'
+                })
+            
             # Use LangGraph K8s Agent for intelligent responses
             log_command(f"AI Agent Query: {message[:100]}...", "Running", "Processing with K8s Agent")
             

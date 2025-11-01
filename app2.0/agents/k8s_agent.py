@@ -1,210 +1,26 @@
 """
 Kubernetes Supervisor Agent using LangGraph
 Single agent that manages all Kubernetes operations - following the sample pattern
+Tools are now separated in k8s_tools.py for better organization
 """
 
 import os
-import time
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
-from langchain_core.tools import tool
 from langgraph.graph import StateGraph, MessagesState
+
+# Import tools from separate file
+from .k8s_tools import (
+    get_cluster_pods,
+    get_cluster_nodes,
+    describe_node,
+    describe_pod,
+    get_pod_logs,
+    get_cluster_events
+)
 
 # Load environment variables
 load_dotenv()
-
-# Simple cache for kubectl responses (30 second TTL)
-_kubectl_cache = {}
-_cache_ttl = 30
-
-
-# ============================================================================
-# CACHING HELPER (Speed Optimization)
-# ============================================================================
-
-def _cached_kubectl_command(cache_key: str, command_func, *args, **kwargs):
-    """Cache kubectl responses for 30 seconds to speed up repeated queries."""
-    current_time = time.time()
-    
-    # Check cache
-    if cache_key in _kubectl_cache:
-        cached_result, timestamp = _kubectl_cache[cache_key]
-        if current_time - timestamp < _cache_ttl:
-            return cached_result
-    
-    # Execute command and cache result
-    result = command_func(*args, **kwargs)
-    _kubectl_cache[cache_key] = (result, current_time)
-    
-    # Clean old cache entries (keep cache small)
-    for key in list(_kubectl_cache.keys()):
-        if current_time - _kubectl_cache[key][1] > _cache_ttl:
-            del _kubectl_cache[key]
-    
-    return result
-
-# ============================================================================
-# KUBERNETES TOOLS (kubectl commands via SSH) - LangGraph style
-# ============================================================================
-
-@tool
-def get_cluster_pods(namespace: str = "all") -> str:
-    """
-    Get list of all pods in the cluster or specific namespace.
-    Args:
-        namespace: Namespace to filter pods (default: "all" for all namespaces)
-    Returns:
-        String with pod information
-    """
-    import subprocess
-    
-    try:
-        if namespace == "all":
-            command = "kubectl get pods --all-namespaces -o wide"
-        else:
-            command = f"kubectl get pods -n {namespace} -o wide"
-        
-        # Execute on master node via SSH
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && {command}"
-        
-        result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
-            f"--command={full_command}",
-            "--quiet"
-        ], capture_output=True, text=True, timeout=8)
-        
-        if result.returncode == 0:
-            return result.stdout
-        else:
-            return f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error executing command: {str(e)}"
-
-
-@tool
-def get_cluster_nodes() -> str:
-    """
-    Get list of all nodes in the cluster with detailed information.
-    Returns:
-        String with node information including status, roles, age, and version
-    """
-    import subprocess
-    
-    try:
-        command = "kubectl get nodes -o wide"
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && {command}"
-        
-        result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
-            f"--command={full_command}",
-            "--quiet"
-        ], capture_output=True, text=True, timeout=8)
-        
-        if result.returncode == 0:
-            return result.stdout
-        else:
-            return f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error executing command: {str(e)}"
-
-
-@tool
-def describe_pod(pod_name: str, namespace: str = "default") -> str:
-    """
-    Get detailed information about a specific pod.
-    Args:
-        pod_name: Name of the pod
-        namespace: Namespace of the pod (default: "default")
-    Returns:
-        Detailed pod description including events, status, and configuration
-    """
-    import subprocess
-    
-    try:
-        command = f"kubectl describe pod {pod_name} -n {namespace}"
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && {command}"
-        
-        result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
-            f"--command={full_command}",
-            "--quiet"
-        ], capture_output=True, text=True, timeout=8)
-        
-        if result.returncode == 0:
-            return result.stdout
-        else:
-            return f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error executing command: {str(e)}"
-
-
-@tool
-def get_pod_logs(pod_name: str, namespace: str = "default", tail: int = 50) -> str:
-    """
-    Get logs from a specific pod.
-    Args:
-        pod_name: Name of the pod
-        namespace: Namespace of the pod (default: "default")
-        tail: Number of recent log lines to retrieve (default: 50)
-    Returns:
-        Pod logs
-    """
-    import subprocess
-    
-    try:
-        command = f"kubectl logs {pod_name} -n {namespace} --tail={tail}"
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && {command}"
-        
-        result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
-            f"--command={full_command}",
-            "--quiet"
-        ], capture_output=True, text=True, timeout=8)
-        
-        if result.returncode == 0:
-            return result.stdout if result.stdout else "No logs available"
-        else:
-            return f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error executing command: {str(e)}"
-
-
-@tool
-def get_cluster_events(namespace: str = "all") -> str:
-    """
-    Get cluster events to see what's happening in the cluster.
-    Args:
-        namespace: Namespace to filter events (default: "all" for all namespaces)
-    Returns:
-        Recent cluster events
-    """
-    import subprocess
-    
-    try:
-        if namespace == "all":
-            command = "kubectl get events --all-namespaces --sort-by='.lastTimestamp'"
-        else:
-            command = f"kubectl get events -n {namespace} --sort-by='.lastTimestamp'"
-        
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && {command}"
-        
-        result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
-            f"--command={full_command}",
-            "--quiet"
-        ], capture_output=True, text=True, timeout=8)
-        
-        if result.returncode == 0:
-            return result.stdout
-        else:
-            return f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error executing command: {str(e)}"
 
 
 # ============================================================================
@@ -240,7 +56,7 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
     # DEFINE TOOLS (Already decorated with @tool above)
     # ========================================================================
     
-    tools = [get_cluster_pods, get_cluster_nodes, describe_pod, get_pod_logs, get_cluster_events]
+    tools = [get_cluster_pods, get_cluster_nodes, describe_node, describe_pod, get_pod_logs, get_cluster_events]
     
     # Bind tools to model (LangGraph pattern)
     model_with_tools = model.bind_tools(tools)
@@ -254,25 +70,123 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
         Kubernetes supervisor agent node - handles all K8s operations.
         This replaces create_react_agent functionality.
         """
-        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
         
         messages = state["messages"]
         
         # Add system prompt for this agent (optimized for speed)
-        system_msg = """You are a fast Kubernetes agent. Use tools to get real cluster data and respond concisely.
+        system_msg = """You are a Kubernetes agent that MUST use tools to get real-time cluster data.
 
-TOOLS: get_cluster_pods, get_cluster_nodes, describe_pod, get_pod_logs, get_cluster_events
+CRITICAL: You MUST call the appropriate tool for EVERY question. NEVER guess or use cached knowledge.
 
-BE FAST AND DIRECT - Use the appropriate tool and give clear, brief answers."""
+AVAILABLE TOOLS:
+- get_cluster_pods: List all pods with their NODE location (use this to see which pods are on which node)
+  * ALWAYS use namespace='all' to see ALL pods across all namespaces (kube-system, default, etc.)
+  * Only use a specific namespace if user explicitly asks for one namespace
+- get_cluster_nodes: Show nodes with ONLY basic info (status, roles, version) - NO capacity/taints/labels
+- describe_node: Get DETAILED node information including TAINTS, LABELS, CAPACITY, ALLOCATABLE resources, CONDITIONS
+- describe_pod: Get pod details
+- get_pod_logs: Retrieve logs
+- get_cluster_events: Show events
+
+IMPORTANT - Tool Selection:
+- For CAPACITY, MEMORY, CPU resources → use describe_node tool (NOT get_cluster_nodes)
+- For TAINTS, LABELS → use describe_node tool
+- For basic node list/status → use get_cluster_nodes tool
+- To LIST pods on a node: Find ALL rows where the NODE column (not NAME column) contains that node name
+- To COUNT pods on a node: Count ALL rows where the NODE column matches that node name
+- The NODE column is typically the 6th or 7th column in kubectl output
+- Pod names are in NAME column (column 2), but node location is in NODE column
+- Example: "kube-flannel-ds-vbnxb" running on "k8s-master-001" - check NODE column, not NAME
+- CRITICAL PROCESS for counting/listing pods on a specific node:
+  1. Call get_cluster_pods with namespace='all' to get ALL pods
+  2. The kubectl output may have WORD-WRAPPED LINES due to terminal width
+  3. Each pod is represented by a data row that contains: NAMESPACE, NAME, READY, STATUS, RESTARTS, AGE, IP, NODE columns
+  4. The NODE column value tells you which node the pod runs on (e.g., "k8s-master-001" or "k8s-worker-01")
+  5. IMPORTANT: Some lines may be split/wrapped - look for the NODE column value in each pod's data
+  6. To count pods on a specific node: Search the entire output and count EVERY occurrence of that exact NODE name
+     - Example: If you find "k8s-worker-01" 3 times → answer is 3 pods
+     - DO NOT subtract or exclude any pods - if the node name appears, count it
+  7. To list pods on a specific node: Find each occurrence of that NODE name, then look for the NAME column value in that same pod's data
+  8. Do NOT filter by pod NAME containing "master" or "worker" - check the NODE column value instead
+  9. CRITICAL: DaemonSet pods (kube-flannel-ds-*, kube-proxy-*, kube-system pods) MUST be counted - they are real pods running on that node
+- Example node names: k8s-master-001, k8s-worker-01
+- Example pod types that DON'T have node names in their pod names:
+  * kube-flannel-ds-* (runs on all nodes via DaemonSet)
+  * kube-proxy-* (runs on all nodes via DaemonSet)
+  * coredns-* (typically runs on master/control-plane)
+  * Application pods (can run on any node)
+
+WORKFLOW:
+1. User asks a question
+2. You MUST call the appropriate tool that has the needed information
+3. If comparing MULTIPLE nodes/pods, call the tool MULTIPLE TIMES (once for each)
+4. After getting tool results, analyze the data and provide the answer
+5. If the tool output doesn't contain what you need, say so - DON'T guess
+
+RESPONSE RULES:
+- Answer directly without mentioning which tool you used
+- Be brief and to the point
+- When LISTING pods: Include EVERY pod where NODE column matches - don't skip any (especially kube-flannel and kube-proxy)
+- When COUNTING pods: Count EVERY row where NODE column matches
+- When listing pods on master: MUST include kube-flannel-ds-vbnxb, kube-proxy-2z4vj, AND all pods with "master" in name
+- For CAPACITY: extract CPU and memory from describe_node output
+- For TAINTS: extract from describe_node output and show the taint key, value, and effect
+- If tools don't provide the needed information, say: "I don't have access to that information."
+
+Examples:
+User: "how many pods are on master node" 
+  → Call get_cluster_pods(namespace='all')
+  → Search for 'k8s-master-001' in the output - count how many times it appears
+  → Each appearance = one pod running on that node
+  → "There are X pods running on the master node."
+
+User: "how many pods are on worker node" 
+  → Call get_cluster_pods(namespace='all')
+  → Search for 'k8s-worker-01' in the output - count how many times it appears  
+  → Each appearance = one pod running on that node
+  → "There are X pods running on the worker node."
+
+User: "list the pods on master node" 
+  → Call get_cluster_pods(namespace='all')
+  → Find ALL rows where NODE column = 'k8s-master-001'
+  → List the pod names from the NAME column (column 2) for those rows
+  → Include pods with "master" in name AND pods without it (kube-flannel, kube-proxy, coredns, etc.)
+  
+User: "list the pods on worker node" 
+  → Call get_cluster_pods(namespace='all')
+  → Find ALL rows where NODE column = 'k8s-worker-01'
+  → List the pod names from the NAME column (column 2) for those rows
+  → Include ALL pods regardless of whether "worker" appears in their name
+User: "which node has more capacity" → 
+  Step 1: Call describe_node with node_name='k8s-master-001'
+  Step 2: Call describe_node with node_name='k8s-worker-01'
+  Step 3: Compare CPU/memory capacity from both results
+  Response: "Both nodes have the same capacity with 2 CPU cores and 4GB memory each." OR "The master node has more capacity..."
+User: "are there taints on master node" → Call describe_node with node_name='k8s-master-001', then: "No, there are no taints on the master node." OR "Yes, the master node has taint: node-role.kubernetes.io/control-plane:NoSchedule"
+"""
         
-        # Add system message if not present
-        if not messages or messages[0].content != system_msg:
-            messages = [AIMessage(content="", additional_kwargs={"system": system_msg})] + messages
+        # Check if we already have tool results and need to generate final answer
+        has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
+        last_message = messages[-1]
+        has_pending_tool_calls = hasattr(last_message, 'tool_calls') and last_message.tool_calls
         
-        # Call model with tools
-        response = model_with_tools.invoke(messages)
+        # If we have tool results but no pending tool calls, force a final answer
+        if has_tool_results and not has_pending_tool_calls:
+            # Add instruction to summarize
+            messages_with_system = [SystemMessage(content=system_msg)] + messages + [
+                HumanMessage(content="Provide a direct, concise answer to the user's question. Don't mention the tools or say 'based on the output'.")
+            ]
+            response = model_with_tools.invoke(messages_with_system)
+        else:
+            # Normal flow - add system message if not present
+            if not messages or not isinstance(messages[0], SystemMessage):
+                messages = [SystemMessage(content=system_msg)] + messages
+            
+            # Call model with tools
+            response = model_with_tools.invoke(messages)
         
-        return {"messages": messages + [response]}
+        return {"messages": [response]}
     
     # ========================================================================
     # CREATE TOOL NODE (Manual replacement for ToolNode)
@@ -294,9 +208,12 @@ BE FAST AND DIRECT - Use the appropriate tool and give clear, brief answers."""
                 tool_args = tool_call.get("args", {})
                 
                 # Find and execute the tool
+                tool_found = False
                 for tool in tools:
                     if tool.name == tool_name:
+                        tool_found = True
                         try:
+                            # Use .invoke() for LangChain tools
                             result = tool.invoke(tool_args)
                             tool_results.append(
                                 ToolMessage(
@@ -312,14 +229,23 @@ BE FAST AND DIRECT - Use the appropriate tool and give clear, brief answers."""
                                 )
                             )
                         break
+                
+                # If tool not found, return error message for this tool_call_id
+                if not tool_found:
+                    tool_results.append(
+                        ToolMessage(
+                            content=f"Tool '{tool_name}' not found",
+                            tool_call_id=tool_call["id"]
+                        )
+                    )
         
-        return {"messages": messages + tool_results}
+        return {"messages": tool_results}
     
     # ========================================================================
     # BUILD LANGGRAPH WORKFLOW (Following Sample Pattern)
     # ========================================================================
     
-    # Create the graph
+    # Create the graph with recursion limit
     workflow = StateGraph(MessagesState)
     
     # Add nodes
@@ -329,11 +255,20 @@ BE FAST AND DIRECT - Use the appropriate tool and give clear, brief answers."""
     # Define the flow
     workflow.set_entry_point("k8s_supervisor")
     
-    # Add conditional edge: if tool calls exist, go to tools, otherwise end
+    # Add conditional edge with better stopping logic
     def should_continue(state):
         messages = state["messages"]
         last_message = messages[-1]
+        
+        # Check if we have tool calls to execute
         if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            # Count how many times we've already called tools
+            tool_call_count = sum(1 for m in messages if hasattr(m, 'tool_calls') and m.tool_calls)
+            
+            # Stop if we've tried too many times (agent is confused/looping)
+            if tool_call_count > 3:
+                return "__end__"
+            
             return "tools"
         return "__end__"
     
@@ -380,14 +315,13 @@ def ask_k8s_agent(question: str, api_key: str = None, verbose: bool = False) -> 
         messages = result.get("messages", [])
         final_answer = "No response generated."
         
-        # Get the last AI message with actual content (following sample pattern)
+        # Get the last AI message with actual content
+        from langchain_core.messages import AIMessage, ToolMessage
         for message in reversed(messages):
-            if hasattr(message, 'content') and message.content:
-                # Skip system messages and tool messages
-                if not hasattr(message, 'tool_calls') or not message.tool_calls:
-                    if message.content.strip() and not message.content.startswith("Error"):
-                        final_answer = message.content
-                        break
+            # We want the last AIMessage that has text content (not just tool calls)
+            if isinstance(message, AIMessage) and message.content and message.content.strip():
+                final_answer = message.content
+                break
         
         return {
             "answer": final_answer,
