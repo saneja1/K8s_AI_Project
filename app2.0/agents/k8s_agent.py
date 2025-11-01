@@ -16,7 +16,9 @@ from .k8s_tools import (
     describe_node,
     describe_pod,
     get_pod_logs,
-    get_cluster_events
+    get_cluster_events,
+    count_pods_on_node,
+    count_resources
 )
 
 # Load environment variables
@@ -56,7 +58,7 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
     # DEFINE TOOLS (Already decorated with @tool above)
     # ========================================================================
     
-    tools = [get_cluster_pods, get_cluster_nodes, describe_node, describe_pod, get_pod_logs, get_cluster_events]
+    tools = [get_cluster_pods, get_cluster_nodes, describe_node, describe_pod, get_pod_logs, get_cluster_events, count_pods_on_node, count_resources]
     
     # Bind tools to model (LangGraph pattern)
     model_with_tools = model.bind_tools(tools)
@@ -88,6 +90,13 @@ AVAILABLE TOOLS:
 - describe_pod: Get pod details
 - get_pod_logs: Retrieve logs
 - get_cluster_events: Show events
+- count_pods_on_node: **USE THIS for counting pods on a specific node** (e.g., 'k8s-master-001', 'k8s-worker-01')
+- count_resources: **FLEXIBLE counting tool** for any resource type with filtering
+  * Examples: count_resources('pods', 'status', 'Running') -> running pods
+  * count_resources('pods', 'namespace', 'kube-system') -> pods in namespace
+  * count_resources('pods', 'ready', '0/1') -> not ready pods
+  * Works with: pods, nodes, services, deployments
+  * Filters: status, namespace, node, ready, name, age, ip
 
 IMPORTANT - Tool Selection:
 - For CAPACITY, MEMORY, CPU resources → use describe_node tool (NOT get_cluster_nodes)
@@ -136,28 +145,20 @@ RESPONSE RULES:
 
 Examples:
 User: "how many pods are on master node" 
-  → Call get_cluster_pods(namespace='all')
-  → Search for 'k8s-master-001' in the output - count how many times it appears
-  → Each appearance = one pod running on that node
+  → Call count_pods_on_node(node_name='k8s-master-001')
   → "There are X pods running on the master node."
 
 User: "how many pods are on worker node" 
-  → Call get_cluster_pods(namespace='all')
-  → Search for 'k8s-worker-01' in the output - count how many times it appears  
-  → Each appearance = one pod running on that node
+  → Call count_pods_on_node(node_name='k8s-worker-01')
   → "There are X pods running on the worker node."
 
 User: "list the pods on master node" 
-  → Call get_cluster_pods(namespace='all')
-  → Find ALL rows where NODE column = 'k8s-master-001'
-  → List the pod names from the NAME column (column 2) for those rows
-  → Include pods with "master" in name AND pods without it (kube-flannel, kube-proxy, coredns, etc.)
+  → Call count_pods_on_node(node_name='k8s-master-001')
+  → Extract pod names from the result and list them
   
 User: "list the pods on worker node" 
-  → Call get_cluster_pods(namespace='all')
-  → Find ALL rows where NODE column = 'k8s-worker-01'
-  → List the pod names from the NAME column (column 2) for those rows
-  → Include ALL pods regardless of whether "worker" appears in their name
+  → Call count_pods_on_node(node_name='k8s-worker-01')
+  → Extract pod names from the result and list them
 User: "which node has more capacity" → 
   Step 1: Call describe_node with node_name='k8s-master-001'
   Step 2: Call describe_node with node_name='k8s-worker-01'

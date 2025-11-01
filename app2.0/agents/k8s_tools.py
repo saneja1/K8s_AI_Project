@@ -232,3 +232,102 @@ def get_cluster_events(namespace: str = "all") -> str:
             return f"Error executing command: {str(e)}"
     
     return _cached_kubectl_command(cache_key, _execute)
+
+
+@tool
+def count_pods_on_node(node_name: str) -> str:
+    """
+    Count how many pods are running on a specific node.
+    Args:
+        node_name: Name of the node (e.g., 'k8s-master-001', 'k8s-worker-01')
+    Returns:
+        Count of pods on that node with pod names listed
+    """
+    import subprocess
+    try:
+        full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods --all-namespaces -o wide"
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a", f"--command={full_command}", "--quiet"
+        ], capture_output=True, text=True, timeout=8)
+        
+        if result.returncode != 0:
+            return f"Error: {result.stderr}"
+        
+        count, pod_list = 0, []
+        for line in result.stdout.strip().split('\n'):
+            if node_name in line:
+                count += 1
+                parts = line.split()
+                if len(parts) >= 2:
+                    pod_list.append(parts[1])
+        
+        return f"Count: {count} pods on {node_name}\nPods: {', '.join(pod_list)}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+@tool
+def count_resources(resource_type: str, filter_by: str, filter_value: str) -> str:
+    """
+    Generic tool to count Kubernetes resources with flexible filtering.
+    Args:
+        resource_type: Type of resource ('pods', 'nodes', 'services', 'deployments')
+        filter_by: Field to filter by ('status', 'namespace', 'node', 'ready')
+        filter_value: Value to match (e.g., 'Running', 'kube-system', 'k8s-master-001', 'true')
+    Returns:
+        Count with list of matching resources
+    Examples:
+        count_resources('pods', 'status', 'Running') -> counts running pods
+        count_resources('pods', 'namespace', 'kube-system') -> counts pods in kube-system
+        count_resources('pods', 'ready', '0/1') -> counts pods not ready
+    """
+    import subprocess
+    try:
+        # Build kubectl command based on resource type
+        if resource_type == "pods":
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods --all-namespaces -o wide"
+        elif resource_type == "nodes":
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide"
+        elif resource_type == "services":
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get services --all-namespaces"
+        elif resource_type == "deployments":
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get deployments --all-namespaces"
+        else:
+            return f"Error: Unsupported resource_type '{resource_type}'"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a", f"--command={full_command}", "--quiet"
+        ], capture_output=True, text=True, timeout=8)
+        
+        if result.returncode != 0:
+            return f"Error: {result.stderr}"
+        
+        # Parse and filter results
+        lines = result.stdout.strip().split('\n')
+        header = lines[0].split() if lines else []
+        count, resource_list = 0, []
+        
+        # Map filter_by to column index
+        filter_col_map = {
+            'namespace': 0, 'status': 3, 'ready': 2, 'node': 7,
+            'name': 1, 'age': 5, 'ip': 6
+        }
+        
+        col_idx = filter_col_map.get(filter_by.lower())
+        if col_idx is None:
+            return f"Error: Unsupported filter_by '{filter_by}'. Use: namespace, status, ready, node, name, age, ip"
+        
+        for line in lines[1:]:  # Skip header
+            parts = line.split()
+            if len(parts) > col_idx and filter_value.lower() in parts[col_idx].lower():
+                count += 1
+                # Get resource name (column 1 for pods/services, column 0 for nodes)
+                name_idx = 1 if resource_type in ['pods', 'services', 'deployments'] else 0
+                if len(parts) > name_idx:
+                    resource_list.append(parts[name_idx])
+        
+        return f"Count: {count} {resource_type} where {filter_by}='{filter_value}'\nMatching: {', '.join(resource_list) if resource_list else 'none'}"
+    except Exception as e:
+        return f"Error: {str(e)}"
