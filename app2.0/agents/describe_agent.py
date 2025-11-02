@@ -15,9 +15,9 @@ from langchain_core.tools import tool
 # Load environment variables
 load_dotenv()
 
-# Cache for kubectl commands (30 seconds TTL)
+# Cache for kubectl commands (60 seconds TTL)
 _cache = {}
-_cache_ttl = 30
+_cache_ttl = 60
 
 def _cached_kubectl_command(cache_key, execute_fn):
     """Helper to cache kubectl command results"""

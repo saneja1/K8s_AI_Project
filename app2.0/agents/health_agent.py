@@ -4,28 +4,138 @@ Handles queries about node health, cluster events, and overall cluster status
 """
 
 import os
+import subprocess
+import time
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, MessagesState
-
-# Import health-related tools
-try:
-    # Try relative import (when used as module)
-    from .k8s_tools import (
-        get_cluster_nodes,
-        get_cluster_events
-        # count_resources removed - belongs to Describe/Operations agents
-    )
-except ImportError:
-    # Fallback to absolute import (when run directly)
-    from k8s_tools import (
-        get_cluster_nodes,
-        get_cluster_events
-        # count_resources removed - belongs to Describe/Operations agents
-    )
+from langchain_core.tools import tool
 
 # Load environment variables
 load_dotenv()
+
+# Cache for kubectl commands (60 seconds TTL)
+_command_cache = {}
+_cache_ttl = 60
+
+def _cached_kubectl_command(cache_key: str, execute_fn) -> str:
+    """Helper to cache kubectl command results"""
+    current_time = time.time()
+    
+    if cache_key in _command_cache:
+        result, timestamp = _command_cache[cache_key]
+        if current_time - timestamp < _cache_ttl:
+            return result
+    
+    result = execute_fn()
+    _command_cache[cache_key] = (result, current_time)
+    return result
+
+
+# ============================================================================
+# HEALTH AGENT TOOLS (Defined in this file)
+# ============================================================================
+
+@tool
+def get_cluster_nodes() -> str:
+    """
+    Get list of all nodes in the cluster with detailed information.
+    Returns:
+        String with node information including status, roles, age, and version
+    """
+    cache_key = "nodes"
+    
+    def _execute():
+        try:
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide"
+            
+            result = subprocess.run([
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+                "--zone=us-central1-a",
+                f"--command={full_command}",
+                "--quiet"
+            ], capture_output=True, text=True, timeout=8)
+            
+            if result.returncode == 0:
+                return result.stdout
+            else:
+                return f"Error: {result.stderr}"
+        except Exception as e:
+            return f"Error executing command: {str(e)}"
+    
+    return _cached_kubectl_command(cache_key, _execute)
+
+
+@tool
+def describe_node(node_name: str = "all") -> str:
+    """
+    Get detailed node conditions including Ready, MemoryPressure, DiskPressure, PIDPressure status.
+    Args:
+        node_name: Name of the node to describe (default: "all" for all nodes)
+    Returns:
+        String with node conditions showing health status
+    """
+    cache_key = f"describe_node_{node_name}"
+    
+    def _execute():
+        try:
+            if node_name == "all":
+                # Get conditions for all nodes using jsonpath
+                full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\\n\"}{range .status.conditions[*]}{\"  \"}{.type}{\" = \"}{.status}{\" (Reason: \"}{.reason}{\" | Message: \"}{.message}{\")\"}  {\"\\n\"}{end}{\"\\n\"}{end}'"
+            else:
+                # Get conditions for specific node
+                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o jsonpath='{{.metadata.name}}{{\"\\n\"}}{{range .status.conditions[*]}}{{\"  \"}}{{.type}}{{\" = \"}}{{.status}}{{\" (Reason: \"}}{{.reason}}{{\" | Message: \"}}{{.message}}{{\")\"}}{{\"\n\"}}{{end}}'"
+            
+            result = subprocess.run([
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+                "--zone=us-central1-a",
+                f"--command={full_command}",
+                "--quiet"
+            ], capture_output=True, text=True, timeout=8)
+            
+            if result.returncode == 0:
+                return result.stdout if result.stdout.strip() else "No node conditions found"
+            else:
+                return f"Error: {result.stderr}"
+        except Exception as e:
+            return f"Error executing command: {str(e)}"
+    
+    return _cached_kubectl_command(cache_key, _execute)
+
+
+@tool
+def get_cluster_events(namespace: str = "all") -> str:
+    """
+    Get cluster events to see what's happening in the cluster.
+    Args:
+        namespace: Namespace to filter events (default: "all" for all namespaces)
+    Returns:
+        String with cluster events
+    """
+    cache_key = f"events_{namespace}"
+    
+    def _execute():
+        try:
+            if namespace == "all":
+                full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events --all-namespaces --sort-by='.lastTimestamp'"
+            else:
+                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -n {namespace} --sort-by='.lastTimestamp'"
+            
+            result = subprocess.run([
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+                "--zone=us-central1-a",
+                f"--command={full_command}",
+                "--quiet"
+            ], capture_output=True, text=True, timeout=8)
+            
+            if result.returncode == 0:
+                return result.stdout
+            else:
+                return f"Error: {result.stderr}"
+        except Exception as e:
+            return f"Error executing command: {str(e)}"
+    
+    return _cached_kubectl_command(cache_key, _execute)
 
 
 def create_health_agent(api_key: str = None, verbose: bool = False):
@@ -53,7 +163,7 @@ def create_health_agent(api_key: str = None, verbose: bool = False):
     )
     
     # Define tools for health monitoring (focused on node health and events only)
-    tools = [get_cluster_nodes, get_cluster_events]
+    tools = [get_cluster_nodes, describe_node, get_cluster_events]
     
     # Bind tools to model
     model_with_tools = model.bind_tools(tools)
@@ -74,13 +184,23 @@ Do NOT handle pod counting, pod listing, or resource capacity questions.
 
 AVAILABLE TOOLS:
 - get_cluster_nodes: Show all nodes with their status (Ready/NotReady), roles, age, version
+- describe_node: Get detailed node information including conditions (MemoryPressure, DiskPressure, PIDPressure, Ready), capacity, and allocatable resources
 - get_cluster_events: Show recent cluster events (warnings, errors, failures)
 
 WHEN TO USE EACH TOOL:
 - "Is my cluster healthy?" → use get_cluster_nodes to check node status
 - "Are nodes ready?" → use get_cluster_nodes
+- "Show node conditions" → ALWAYS use describe_node to see detailed conditions (MemoryPressure, DiskPressure, PIDPressure, Ready)
+- "List conditions" or "what are the conditions" → ALWAYS use describe_node
+- "Node details" or "describe node" → use describe_node
 - "Any errors or warnings?" → use get_cluster_events
 - "What's the status of nodes?" → use get_cluster_nodes
+
+IMPORTANT: 
+- When user asks for "conditions", they want ALL conditions (Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable)
+- Use describe_node tool for condition details, not just get_cluster_nodes
+- get_cluster_nodes only shows basic Ready/NotReady status
+- describe_node shows all 5 condition types
 
 RESPONSE RULES:
 - Focus ONLY on node health and cluster events
@@ -100,14 +220,20 @@ User: "Are all nodes healthy?"
   → Check STATUS column
   → Answer: "Yes, all nodes are Ready" OR "No, node X is NotReady"
 
+User: "List node conditions"
+  → Call describe_node
+  → Show all conditions: Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable
+  → Explain status of each
+
+User: "How many nodes and their conditions?"
+  → Call get_cluster_nodes (for count)
+  → Call describe_node (for detailed conditions)
+  → Provide count + detailed condition breakdown
+
 User: "Any recent problems?"
   → Call get_cluster_events
   → Look for Warning/Error types
   → Summarize issues found
-
-User: "How many nodes are ready?"
-  → Call count_resources with resource_type='nodes', filter_by='status', filter_value='Ready'
-  → Answer with the count
 """
         
         # Check if we have tool results and need final answer
