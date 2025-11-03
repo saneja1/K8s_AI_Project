@@ -4,10 +4,16 @@
 # Usage: ./manage_app.sh {start|stop|restart|status}
 
 APP_NAME="flask_app2.0"
-APP_DIR="/mnt/c/K8s_AI_Project/app2.0"
+APP_DIR="/home/K8s_AI_Project/app2.0"
 PID_FILE="$APP_DIR/app.pid"
 LOG_FILE="$APP_DIR/app.log"
 PYTHON_APP="app.py"
+
+# MCP Server settings
+MCP_SERVER_NAME="mcp_health_server"
+MCP_SERVER_SCRIPT="MCP/mcp_health/mcp_health_server.py"
+MCP_PID_FILE="$APP_DIR/mcp_health.pid"
+MCP_LOG_FILE="$APP_DIR/mcp_health.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -47,6 +53,22 @@ is_running() {
     fi
 }
 
+# Function to check if MCP server is running
+is_mcp_running() {
+    if [ -f "$MCP_PID_FILE" ]; then
+        MCP_PID=$(cat "$MCP_PID_FILE")
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            return 0
+        else
+            # PID file exists but process is not running
+            rm -f "$MCP_PID_FILE"
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
 # Function to start the app
 start() {
     echo -e "${YELLOW}Starting $APP_NAME...${NC}"
@@ -59,6 +81,22 @@ start() {
     # Activate virtual environment (local to app2.0)
     echo -e "${YELLOW}Activating virtual environment...${NC}"
     activate_venv
+    
+    # Start MCP Health Server first
+    echo -e "${YELLOW}Starting MCP Health Server on port 8000...${NC}"
+    nohup python3 "$MCP_SERVER_SCRIPT" > "$MCP_LOG_FILE" 2>&1 &
+    echo $! > "$MCP_PID_FILE"
+    sleep 2
+    
+    if is_mcp_running; then
+        echo -e "${GREEN}MCP Health Server started successfully (PID: $(cat $MCP_PID_FILE))${NC}"
+    else
+        echo -e "${RED}Failed to start MCP Health Server${NC}"
+        if [ -f "$MCP_LOG_FILE" ]; then
+            echo -e "${RED}Check logs: $MCP_LOG_FILE${NC}"
+            tail -10 "$MCP_LOG_FILE"
+        fi
+    fi
     
     # Start the app in background
     echo -e "${YELLOW}Launching Flask app on port 7000...${NC}"
@@ -73,6 +111,7 @@ start() {
     if is_running; then
         echo -e "${GREEN}$APP_NAME started successfully (PID: $(cat $PID_FILE))${NC}"
         echo -e "${GREEN}App is running at: http://localhost:7000${NC}"
+        echo -e "${GREEN}MCP Server is running at: http://localhost:8000/mcp${NC}"
         echo -e "${GREEN}Logs: $LOG_FILE${NC}"
         return 0
     else
@@ -89,34 +128,63 @@ start() {
 stop() {
     echo -e "${YELLOW}Stopping $APP_NAME...${NC}"
     
+    # Stop Flask app
     if ! is_running; then
         echo -e "${YELLOW}$APP_NAME is not running${NC}"
-        return 1
-    fi
-    
-    PID=$(cat "$PID_FILE")
-    
-    # Try graceful shutdown first
-    kill "$PID" 2>/dev/null
-    
-    # Wait up to 10 seconds for graceful shutdown
-    for i in {1..10}; do
-        if ! ps -p "$PID" > /dev/null 2>&1; then
-            break
+    else
+        PID=$(cat "$PID_FILE")
+        
+        # Try graceful shutdown first
+        kill "$PID" 2>/dev/null
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! ps -p "$PID" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if ps -p "$PID" > /dev/null 2>&1; then
+            echo -e "${YELLOW}Force killing $APP_NAME...${NC}"
+            kill -9 "$PID" 2>/dev/null
         fi
-        sleep 1
-    done
-    
-    # Force kill if still running
-    if ps -p "$PID" > /dev/null 2>&1; then
-        echo -e "${YELLOW}Force killing $APP_NAME...${NC}"
-        kill -9 "$PID" 2>/dev/null
+        
+        # Clean up PID file
+        rm -f "$PID_FILE"
+        echo -e "${GREEN}$APP_NAME stopped${NC}"
     fi
     
-    # Clean up PID file
-    rm -f "$PID_FILE"
+    # Stop MCP Server
+    echo -e "${YELLOW}Stopping MCP Health Server...${NC}"
+    if ! is_mcp_running; then
+        echo -e "${YELLOW}MCP Health Server is not running${NC}"
+    else
+        MCP_PID=$(cat "$MCP_PID_FILE")
+        
+        # Try graceful shutdown first
+        kill "$MCP_PID" 2>/dev/null
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! ps -p "$MCP_PID" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            echo -e "${YELLOW}Force killing MCP Health Server...${NC}"
+            kill -9 "$MCP_PID" 2>/dev/null
+        fi
+        
+        # Clean up PID file
+        rm -f "$MCP_PID_FILE"
+        echo -e "${GREEN}MCP Health Server stopped${NC}"
+    fi
     
-    echo -e "${GREEN}$APP_NAME stopped${NC}"
     return 0
 }
 
@@ -131,6 +199,7 @@ restart() {
 
 # Function to show status
 status() {
+    # Check Flask app
     if is_running; then
         PID=$(cat "$PID_FILE")
         echo -e "${GREEN}$APP_NAME is running (PID: $PID)${NC}"
@@ -139,11 +208,29 @@ status() {
         
         # Show recent logs
         if [ -f "$LOG_FILE" ]; then
-            echo -e "\n${YELLOW}Recent logs:${NC}"
+            echo -e "\n${YELLOW}Recent Flask app logs:${NC}"
             tail -5 "$LOG_FILE"
         fi
     else
         echo -e "${RED}$APP_NAME is not running${NC}"
+    fi
+    
+    echo ""
+    
+    # Check MCP Server
+    if is_mcp_running; then
+        MCP_PID=$(cat "$MCP_PID_FILE")
+        echo -e "${GREEN}MCP Health Server is running (PID: $MCP_PID)${NC}"
+        echo -e "${GREEN}MCP URL: http://localhost:8000/mcp${NC}"
+        echo -e "${GREEN}Log file: $MCP_LOG_FILE${NC}"
+        
+        # Show recent logs
+        if [ -f "$MCP_LOG_FILE" ]; then
+            echo -e "\n${YELLOW}Recent MCP server logs:${NC}"
+            tail -5 "$MCP_LOG_FILE"
+        fi
+    else
+        echo -e "${RED}MCP Health Server is not running${NC}"
     fi
 }
 

@@ -1,27 +1,37 @@
 """
 Health Agent - Monitors cluster health and status
 Handles queries about node health, cluster events, and overall cluster status
+Uses MCP Server for tool execution
 """
 
 import os
-import sys
+import asyncio
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, MessagesState
-
-# Add MCP directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'MCP', 'mcp_health'))
-
-# Import tools from MCP directory
-from tools_health import get_cluster_nodes, describe_node, get_cluster_events
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 # Load environment variables
 load_dotenv()
 
 
+async def _get_mcp_tools():
+    """Get tools from MCP Health Server"""
+    client = MultiServerMCPClient(
+        {
+            "k8s_health": {
+                "transport": "streamable_http",
+                "url": "http://127.0.0.1:8000/mcp"
+            }
+        }
+    )
+    tools = await client.get_tools()
+    return tools
+
+
 def create_health_agent(api_key: str = None, verbose: bool = False):
     """
-    Create a Health Agent that monitors cluster health.
+    Create a Health Agent that monitors cluster health using MCP Server.
     
     Args:
         api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
@@ -43,8 +53,8 @@ def create_health_agent(api_key: str = None, verbose: bool = False):
         max_tokens=1024
     )
     
-    # Define tools for health monitoring (focused on node health and events only)
-    tools = [get_cluster_nodes, describe_node, get_cluster_events]
+    # Get tools from MCP server (this is async, so we need to handle it)
+    tools = asyncio.run(_get_mcp_tools())
     
     # Bind tools to model
     model_with_tools = model.bind_tools(tools)
@@ -59,29 +69,55 @@ def create_health_agent(api_key: str = None, verbose: bool = False):
         # System prompt for health agent
         system_msg = """You are a Kubernetes Health Agent specializing in cluster health monitoring.
 
+CRITICAL: You MUST use the available tools to answer questions. Never make assumptions or provide generic responses without calling tools first.
+
 YOUR RESPONSIBILITY:
 Monitor and report on NODE HEALTH and CLUSTER EVENTS only. 
 Do NOT handle pod counting, pod listing, or resource capacity questions.
 
-AVAILABLE TOOLS:
+AVAILABLE TOOLS (ALWAYS USE THESE):
 - get_cluster_nodes: Show all nodes with their status (Ready/NotReady), roles, age, version
 - describe_node: Get detailed node information including conditions (MemoryPressure, DiskPressure, PIDPressure, Ready), capacity, and allocatable resources
 - get_cluster_events: Show recent cluster events (warnings, errors, failures)
 
-WHEN TO USE EACH TOOL:
-- "Is my cluster healthy?" → use get_cluster_nodes to check node status
-- "Are nodes ready?" → use get_cluster_nodes
-- "Show node conditions" → ALWAYS use describe_node to see detailed conditions (MemoryPressure, DiskPressure, PIDPressure, Ready)
-- "List conditions" or "what are the conditions" → ALWAYS use describe_node
-- "Node details" or "describe node" → use describe_node
-- "Any errors or warnings?" → use get_cluster_events
-- "What's the status of nodes?" → use get_cluster_nodes
+MANDATORY TOOL USAGE RULES:
+- "Is my cluster healthy?" → MUST call get_cluster_nodes AND get_cluster_events
+- "How many nodes?" → MUST call get_cluster_nodes
+- "Node conditions?" → MUST call describe_node
+- "Any errors?" → MUST call get_cluster_events
+- "List conditions" → MUST call describe_node
+- ALWAYS call tools before answering. NEVER respond without tool results.
 
-IMPORTANT: 
-- When user asks for "conditions", they want ALL conditions (Ready, MemoryPressure, DiskPressure, PIDPressure, NetworkUnavailable)
-- Use describe_node tool for condition details, not just get_cluster_nodes
-- get_cluster_nodes only shows basic Ready/NotReady status
-- describe_node shows all 5 condition types
+RESPONSE FORMAT FOR CONDITIONS:
+When user asks for "node conditions", "detailed conditions", or "what are the conditions", you MUST:
+1. Call describe_node tool
+2. COPY THE EXACT TOOL OUTPUT IN YOUR RESPONSE - DO NOT PARAPHRASE OR SUMMARIZE
+3. The tool returns data in this format which you MUST preserve:
+   node-name:
+     Condition = Status (Reason: X | Message: Y)
+     Condition = Status (Reason: X | Message: Y)
+     ...
+4. After showing the raw output, you can add a brief summary like "All nodes are healthy" or "Node X has issues"
+5. CRITICAL: When user says "detailed", "show", "list", "what are" - they want to SEE the actual data, not just hear "everything is fine"
+
+Example response format:
+"Here are the detailed node conditions:
+
+k8s-master-001:
+  NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
+  MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
+  DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)
+  PIDPressure = False (Reason: KubeletHasSufficientPID | Message: kubelet has sufficient PID available)
+  Ready = True (Reason: KubeletReady | Message: kubelet is posting ready status)
+
+k8s-worker-01:
+  NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
+  MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
+  DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)
+  PIDPressure = False (Reason: KubeletHasSufficientPID | Message: kubelet has sufficient PID available)
+  Ready = True (Reason: KubeletReady | Message: kubelet is posting ready status)
+
+All nodes are in healthy state."
 
 RESPONSE RULES:
 - Focus ONLY on node health and cluster events
@@ -110,6 +146,22 @@ User: "How many nodes and their conditions?"
   → Call get_cluster_nodes (for count)
   → Call describe_node (for detailed conditions)
   → Provide count + detailed condition breakdown
+  → Example output format:
+    "Found 2 nodes in the cluster:
+    
+    k8s-master-001:
+      NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
+      MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
+      DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)
+      PIDPressure = False (Reason: KubeletHasSufficientPID | Message: kubelet has sufficient PID available)
+      Ready = True (Reason: KubeletReady | Message: kubelet is posting ready status)
+    
+    k8s-worker-01:
+      NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
+      MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
+      DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)
+      PIDPressure = False (Reason: KubeletHasSufficientPID | Message: kubelet has sufficient PID available)
+      Ready = True (Reason: KubeletReady | Message: kubelet is posting ready status)"
 
 User: "Any recent problems?"
   → Call get_cluster_events
@@ -137,51 +189,58 @@ User: "Any recent problems?"
         
         return {"messages": [response]}
     
-    # Create tool node
+    # Create tool node with async support for MCP tools
     def tool_node(state):
-        """Execute tools and return results"""
+        """Execute MCP tools (async) and return results"""
         from langchain_core.messages import ToolMessage
+        import asyncio
         
         messages = state["messages"]
         last_message = messages[-1]
         
-        tool_results = []
-        
-        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-            for tool_call in last_message.tool_calls:
-                tool_name = tool_call["name"]
-                tool_args = tool_call.get("args", {})
-                
-                # Find and execute the tool
-                tool_found = False
-                for tool in tools:
-                    if tool.name == tool_name:
-                        tool_found = True
-                        try:
-                            result = tool.invoke(tool_args)
-                            tool_results.append(
-                                ToolMessage(
-                                    content=str(result),
-                                    tool_call_id=tool_call["id"]
+        async def execute_tools_async():
+            tool_results = []
+            
+            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                for tool_call in last_message.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call.get("args", {})
+                    
+                    # Find and execute the MCP tool
+                    tool_found = False
+                    for tool in tools:
+                        if tool.name == tool_name:
+                            tool_found = True
+                            try:
+                                # MCP tools require async invocation
+                                result = await tool.ainvoke(tool_args)
+                                tool_results.append(
+                                    ToolMessage(
+                                        content=str(result),
+                                        tool_call_id=tool_call["id"]
+                                    )
                                 )
-                            )
-                        except Exception as e:
-                            tool_results.append(
-                                ToolMessage(
-                                    content=f"Error executing {tool_name}: {str(e)}",
-                                    tool_call_id=tool_call["id"]
+                            except Exception as e:
+                                tool_results.append(
+                                    ToolMessage(
+                                        content=f"Error executing {tool_name}: {str(e)}",
+                                        tool_call_id=tool_call["id"]
+                                    )
                                 )
+                            break
+                    
+                    if not tool_found:
+                        tool_results.append(
+                            ToolMessage(
+                                content=f"Tool '{tool_name}' not found",
+                                tool_call_id=tool_call["id"]
                             )
-                        break
-                
-                if not tool_found:
-                    tool_results.append(
-                        ToolMessage(
-                            content=f"Tool '{tool_name}' not found",
-                            tool_call_id=tool_call["id"]
                         )
-                    )
+            
+            return tool_results
         
+        # Run async execution
+        tool_results = asyncio.run(execute_tools_async())
         return {"messages": tool_results}
     
     # Build workflow
@@ -242,12 +301,42 @@ def ask_health_agent(question: str, api_key: str = None, verbose: bool = False) 
         # Extract final answer
         messages = result.get("messages", [])
         final_answer = "No response generated."
+        tool_outputs = []
         
-        from langchain_core.messages import AIMessage
+        from langchain_core.messages import AIMessage, ToolMessage
+        
+        # Collect tool outputs for detailed queries
+        for message in messages:
+            if isinstance(message, ToolMessage) and message.content:
+                tool_outputs.append(str(message.content))
+        
+        # Get the final AI response
         for message in reversed(messages):
-            if isinstance(message, AIMessage) and message.content and message.content.strip():
-                final_answer = message.content
-                break
+            if isinstance(message, AIMessage) and message.content:
+                # Handle both string and list content types
+                if isinstance(message.content, str) and message.content.strip():
+                    final_answer = message.content
+                    break
+                elif isinstance(message, list) and len(message.content) > 0:
+                    # Extract text from content blocks
+                    text_parts = []
+                    for block in message.content:
+                        if isinstance(block, dict) and 'text' in block:
+                            text_parts.append(block['text'])
+                        elif hasattr(block, 'text'):
+                            text_parts.append(block.text)
+                    if text_parts:
+                        final_answer = '\n'.join(text_parts)
+                        break
+        
+        # If user asked for "detailed" or "show" or "list" conditions, prepend tool output
+        detail_keywords = ['detailed', 'detail', 'show', 'list', 'what are', 'conditions']
+        if any(keyword in question.lower() for keyword in detail_keywords) and tool_outputs:
+            # Check if it's a describe_node query by looking for condition-related content
+            for tool_output in tool_outputs:
+                if 'NetworkUnavailable' in tool_output or 'MemoryPressure' in tool_output:
+                    final_answer = f"**Detailed Node Conditions:**\n\n{tool_output}\n\n**Summary:** {final_answer}"
+                    break
         
         return {
             "answer": final_answer,
