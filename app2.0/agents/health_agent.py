@@ -14,6 +14,10 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 # Load environment variables
 load_dotenv()
 
+# Cache for compiled workflow to avoid recreating on every query
+_cached_workflow = None
+_cached_api_key = None
+
 
 async def _get_mcp_tools():
     """Get tools from MCP Health Server"""
@@ -275,6 +279,7 @@ User: "Any recent problems?"
 def ask_health_agent(question: str, api_key: str = None, verbose: bool = False) -> dict:
     """
     Ask the Health Agent a question about cluster health.
+    Uses cached workflow for better performance.
     
     Args:
         question: Question about cluster health
@@ -284,12 +289,18 @@ def ask_health_agent(question: str, api_key: str = None, verbose: bool = False) 
     Returns:
         Dict with 'answer' and 'messages'
     """
+    global _cached_workflow, _cached_api_key
+    
     try:
-        # Create workflow
-        workflow = create_health_agent(api_key=api_key, verbose=verbose)
+        # Get or create cached workflow
+        current_api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         
-        # Compile
-        app = workflow.compile()
+        # Only recreate workflow if API key changed or not cached
+        if _cached_workflow is None or _cached_api_key != current_api_key:
+            _cached_workflow = create_health_agent(api_key=current_api_key, verbose=verbose).compile()
+            _cached_api_key = current_api_key
+        
+        app = _cached_workflow
         
         # Execute
         from langchain_core.messages import HumanMessage
