@@ -10,10 +10,15 @@ LOG_FILE="$APP_DIR/app.log"
 PYTHON_APP="app.py"
 
 # MCP Server settings
-MCP_SERVER_NAME="mcp_health_server"
-MCP_SERVER_SCRIPT="MCP/mcp_health/mcp_health_server.py"
-MCP_PID_FILE="$APP_DIR/mcp_health.pid"
-MCP_LOG_FILE="$APP_DIR/mcp_health.log"
+MCP_HEALTH_SERVER_NAME="mcp_health_server"
+MCP_HEALTH_SERVER_SCRIPT="MCP/mcp_health/mcp_health_server.py"
+MCP_HEALTH_PID_FILE="$APP_DIR/mcp_health.pid"
+MCP_HEALTH_LOG_FILE="$APP_DIR/mcp_health.log"
+
+MCP_DESCRIBE_SERVER_NAME="mcp_describe_server"
+MCP_DESCRIBE_SERVER_SCRIPT="MCP/mcp_describe/mcp_describe_server.py"
+MCP_DESCRIBE_PID_FILE="$APP_DIR/mcp_describe.pid"
+MCP_DESCRIBE_LOG_FILE="$APP_DIR/mcp_describe.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,15 +58,31 @@ is_running() {
     fi
 }
 
-# Function to check if MCP server is running
-is_mcp_running() {
-    if [ -f "$MCP_PID_FILE" ]; then
-        MCP_PID=$(cat "$MCP_PID_FILE")
+# Function to check if MCP health server is running
+is_mcp_health_running() {
+    if [ -f "$MCP_HEALTH_PID_FILE" ]; then
+        MCP_PID=$(cat "$MCP_HEALTH_PID_FILE")
         if ps -p "$MCP_PID" > /dev/null 2>&1; then
             return 0
         else
             # PID file exists but process is not running
-            rm -f "$MCP_PID_FILE"
+            rm -f "$MCP_HEALTH_PID_FILE"
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
+# Function to check if MCP describe server is running
+is_mcp_describe_running() {
+    if [ -f "$MCP_DESCRIBE_PID_FILE" ]; then
+        MCP_PID=$(cat "$MCP_DESCRIBE_PID_FILE")
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            return 0
+        else
+            # PID file exists but process is not running
+            rm -f "$MCP_DESCRIBE_PID_FILE"
             return 1
         fi
     else
@@ -84,17 +105,35 @@ start() {
     
     # Start MCP Health Server first
     echo -e "${YELLOW}Starting MCP Health Server on port 8000...${NC}"
-    nohup python3 "$MCP_SERVER_SCRIPT" > "$MCP_LOG_FILE" 2>&1 &
-    echo $! > "$MCP_PID_FILE"
+    nohup python3 "$MCP_HEALTH_SERVER_SCRIPT" > "$MCP_HEALTH_LOG_FILE" 2>&1 &
+    echo $! > "$MCP_HEALTH_PID_FILE"
     sleep 2
     
-    if is_mcp_running; then
-        echo -e "${GREEN}MCP Health Server started successfully (PID: $(cat $MCP_PID_FILE))${NC}"
+    if is_mcp_health_running; then
+        echo -e "${GREEN}MCP Health Server started successfully (PID: $(cat $MCP_HEALTH_PID_FILE))${NC}"
     else
         echo -e "${RED}Failed to start MCP Health Server${NC}"
-        if [ -f "$MCP_LOG_FILE" ]; then
-            echo -e "${RED}Check logs: $MCP_LOG_FILE${NC}"
-            tail -10 "$MCP_LOG_FILE"
+        if [ -f "$MCP_HEALTH_LOG_FILE" ]; then
+            echo -e "${RED}Check logs: $MCP_HEALTH_LOG_FILE${NC}"
+            tail -10 "$MCP_HEALTH_LOG_FILE"
+        fi
+    fi
+    
+    # Start MCP Describe Server
+    echo -e "${YELLOW}Starting MCP Describe Server on port 8001...${NC}"
+    export PORT=8001
+    nohup python3 "$MCP_DESCRIBE_SERVER_SCRIPT" > "$MCP_DESCRIBE_LOG_FILE" 2>&1 &
+    echo $! > "$MCP_DESCRIBE_PID_FILE"
+    unset PORT
+    sleep 2
+    
+    if is_mcp_describe_running; then
+        echo -e "${GREEN}MCP Describe Server started successfully (PID: $(cat $MCP_DESCRIBE_PID_FILE))${NC}"
+    else
+        echo -e "${RED}Failed to start MCP Describe Server${NC}"
+        if [ -f "$MCP_DESCRIBE_LOG_FILE" ]; then
+            echo -e "${RED}Check logs: $MCP_DESCRIBE_LOG_FILE${NC}"
+            tail -10 "$MCP_DESCRIBE_LOG_FILE"
         fi
     fi
     
@@ -111,7 +150,8 @@ start() {
     if is_running; then
         echo -e "${GREEN}$APP_NAME started successfully (PID: $(cat $PID_FILE))${NC}"
         echo -e "${GREEN}App is running at: http://localhost:7000${NC}"
-        echo -e "${GREEN}MCP Server is running at: http://localhost:8000/mcp${NC}"
+        echo -e "${GREEN}MCP Health Server: http://localhost:8000/mcp${NC}"
+        echo -e "${GREEN}MCP Describe Server: http://localhost:8001/mcp${NC}"
         echo -e "${GREEN}Logs: $LOG_FILE${NC}"
         return 0
     else
@@ -156,12 +196,12 @@ stop() {
         echo -e "${GREEN}$APP_NAME stopped${NC}"
     fi
     
-    # Stop MCP Server
+    # Stop MCP Health Server
     echo -e "${YELLOW}Stopping MCP Health Server...${NC}"
-    if ! is_mcp_running; then
+    if ! is_mcp_health_running; then
         echo -e "${YELLOW}MCP Health Server is not running${NC}"
     else
-        MCP_PID=$(cat "$MCP_PID_FILE")
+        MCP_PID=$(cat "$MCP_HEALTH_PID_FILE")
         
         # Try graceful shutdown first
         kill "$MCP_PID" 2>/dev/null
@@ -181,8 +221,37 @@ stop() {
         fi
         
         # Clean up PID file
-        rm -f "$MCP_PID_FILE"
+        rm -f "$MCP_HEALTH_PID_FILE"
         echo -e "${GREEN}MCP Health Server stopped${NC}"
+    fi
+    
+    # Stop MCP Describe Server
+    echo -e "${YELLOW}Stopping MCP Describe Server...${NC}"
+    if ! is_mcp_describe_running; then
+        echo -e "${YELLOW}MCP Describe Server is not running${NC}"
+    else
+        MCP_PID=$(cat "$MCP_DESCRIBE_PID_FILE")
+        
+        # Try graceful shutdown first
+        kill "$MCP_PID" 2>/dev/null
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! ps -p "$MCP_PID" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            echo -e "${YELLOW}Force killing MCP Describe Server...${NC}"
+            kill -9 "$MCP_PID" 2>/dev/null
+        fi
+        
+        # Clean up PID file
+        rm -f "$MCP_DESCRIBE_PID_FILE"
+        echo -e "${GREEN}MCP Describe Server stopped${NC}"
     fi
     
     return 0
@@ -217,20 +286,38 @@ status() {
     
     echo ""
     
-    # Check MCP Server
-    if is_mcp_running; then
-        MCP_PID=$(cat "$MCP_PID_FILE")
+    # Check MCP Health Server
+    if is_mcp_health_running; then
+        MCP_PID=$(cat "$MCP_HEALTH_PID_FILE")
         echo -e "${GREEN}MCP Health Server is running (PID: $MCP_PID)${NC}"
         echo -e "${GREEN}MCP URL: http://localhost:8000/mcp${NC}"
-        echo -e "${GREEN}Log file: $MCP_LOG_FILE${NC}"
+        echo -e "${GREEN}Log file: $MCP_HEALTH_LOG_FILE${NC}"
         
         # Show recent logs
-        if [ -f "$MCP_LOG_FILE" ]; then
-            echo -e "\n${YELLOW}Recent MCP server logs:${NC}"
-            tail -5 "$MCP_LOG_FILE"
+        if [ -f "$MCP_HEALTH_LOG_FILE" ]; then
+            echo -e "\n${YELLOW}Recent MCP Health server logs:${NC}"
+            tail -5 "$MCP_HEALTH_LOG_FILE"
         fi
     else
         echo -e "${RED}MCP Health Server is not running${NC}"
+    fi
+    
+    echo ""
+    
+    # Check MCP Describe Server
+    if is_mcp_describe_running; then
+        MCP_PID=$(cat "$MCP_DESCRIBE_PID_FILE")
+        echo -e "${GREEN}MCP Describe Server is running (PID: $MCP_PID)${NC}"
+        echo -e "${GREEN}MCP URL: http://localhost:8001/mcp${NC}"
+        echo -e "${GREEN}Log file: $MCP_DESCRIBE_LOG_FILE${NC}"
+        
+        # Show recent logs
+        if [ -f "$MCP_DESCRIBE_LOG_FILE" ]; then
+            echo -e "\n${YELLOW}Recent MCP Describe server logs:${NC}"
+            tail -5 "$MCP_DESCRIBE_LOG_FILE"
+        fi
+    else
+        echo -e "${RED}MCP Describe Server is not running${NC}"
     fi
 }
 
