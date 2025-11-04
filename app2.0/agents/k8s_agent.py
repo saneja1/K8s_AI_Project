@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, MessagesState
 # Import specialized agents
 from .health_agent import ask_health_agent
 from .describe_agent import ask_describe_agent
+from .resources_agent import ask_resources_agent
 
 # Load environment variables
 load_dotenv()
@@ -65,9 +66,12 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
     def k8s_supervisor_node(state):
         """
         Kubernetes supervisor that routes queries to specialized agents.
-        Uses LLM to classify the query and delegate to appropriate agent.
+        Uses LLM to classify the query and delegate to appropriate agent(s).
+        Can execute multiple agents in parallel if query requires multiple perspectives.
         """
         from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+        import asyncio
+        import concurrent.futures
         
         messages = state["messages"]
         
@@ -81,8 +85,8 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
         if not user_question:
             return {"messages": [AIMessage(content="I didn't receive a question. Please ask me about your Kubernetes cluster.")]}
         
-        # Routing logic: Classify which agent should handle this query
-        routing_prompt = f"""Classify this Kubernetes query into ONE category:
+        # Routing logic: Classify which agent(s) should handle this query
+        routing_prompt = f"""Classify this Kubernetes query into ONE OR MORE categories (can select multiple):
 
 Query: "{user_question}"
 
@@ -95,58 +99,98 @@ Categories:
 6. OPERATIONS - scaling, updates, rollouts, restarts, maintenance
 
 IMPORTANT ROUTING RULES:
-- "list pods/services/deployments" → DESCRIBE
-- "how many pods/services" → DESCRIBE
-- "describe pod/service/deployment" → DESCRIBE
-- "what namespaces exist" → DESCRIBE
-- "show me all X" → DESCRIBE (where X is any K8s resource)
-- "is cluster healthy" or "node status" → HEALTH
-- "any errors/warnings" → HEALTH
-- "CPU/memory capacity" → RESOURCES
+- "CPU/memory/disk capacity" → RESOURCES (ONLY)
+- "resource limits/requests" → RESOURCES (ONLY)
+- "pod resource" or "node resource" → RESOURCES (ONLY)
+- "allocatable resources" → RESOURCES (ONLY)
+- "resource usage/utilization" → RESOURCES (ONLY)
 
-Respond with ONLY the category name (e.g., "HEALTH" or "DESCRIBE").
-"""
+- "list pods/services/deployments" → DESCRIBE (ONLY)
+- "how many pods/services" → DESCRIBE (ONLY)
+- "describe pod/service/deployment" → DESCRIBE (ONLY)
+- "what namespaces exist" → DESCRIBE (ONLY)
+- "show me all X" → DESCRIBE (where X is resource type, not resource metrics)
+
+- "is cluster healthy" or "node status" → HEALTH (ONLY)
+- "any errors/warnings" → HEALTH (ONLY)
+
+- "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
+- "list nodes with their status" → DESCRIBE,HEALTH (parallel)
+- "node capacity AND health" → RESOURCES,HEALTH (parallel)
+
+CRITICAL: Respond with ONLY comma-separated category names, nothing else.
+Examples:
+- "HEALTH"
+- "DESCRIBE"
+- "RESOURCES"
+- "DESCRIBE,HEALTH"
+- "RESOURCES,HEALTH"
+
+Your response (category names only):"""
         
         # Ask LLM to classify
         classification_response = model.invoke([HumanMessage(content=routing_prompt)])
-        category = classification_response.content.strip().upper()
+        categories_str = classification_response.content.strip().upper()
+        categories = [cat.strip() for cat in categories_str.split(',')]
         
-        # Route to appropriate agent
-        if "HEALTH" in category:
-            # Call Health Agent
+        # Collect agents to execute
+        agents_to_run = []
+        
+        if "HEALTH" in categories:
+            agents_to_run.append(("Health Agent", lambda: ask_health_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+        
+        if "DESCRIBE" in categories:
+            agents_to_run.append(("Describe Agent", lambda: ask_describe_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+        
+        if "RESOURCES" in categories:
+            agents_to_run.append(("Resources Agent", lambda: ask_resources_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+        
+        # Check for unimplemented agents
+        unimplemented = []
+        if "MONITOR" in categories:
+            unimplemented.append("Monitor Agent (performance metrics)")
+        if "SECURITY" in categories:
+            unimplemented.append("Security Agent (RBAC/security)")
+        if "OPERATIONS" in categories:
+            unimplemented.append("Operations Agent (scaling/updates)")
+        
+        # Execute agents (parallel if multiple)
+        if not agents_to_run and not unimplemented:
+            return {"messages": [AIMessage(content=f"I couldn't classify your query (detected: {categories_str}). Please try rephrasing your question about cluster health, resources, describe, monitor, security, or operations.")]}
+        
+        results = []
+        
+        if len(agents_to_run) == 1:
+            # Single agent - execute directly
+            agent_name, agent_func = agents_to_run[0]
             try:
-                result = ask_health_agent(user_question, api_key=anthropic_api_key, verbose=verbose)
-                answer = result.get('answer', 'No response from Health Agent')
-                return {"messages": [AIMessage(content=answer)]}
+                result = agent_func()
+                answer = result.get('answer', f'No response from {agent_name}')
+                results.append(f"**{agent_name}:**\n{answer}")
             except Exception as e:
-                return {"messages": [AIMessage(content=f"Error routing to Health Agent: {str(e)}")]}
+                results.append(f"**{agent_name} Error:** {str(e)}")
         
-        elif "DESCRIBE" in category:
-            # Call Describe Agent
-            try:
-                result = ask_describe_agent(user_question, api_key=anthropic_api_key, verbose=verbose)
-                answer = result.get('answer', 'No response from Describe Agent')
-                return {"messages": [AIMessage(content=answer)]}
-            except Exception as e:
-                return {"messages": [AIMessage(content=f"Error routing to Describe Agent: {str(e)}")]}
+        elif len(agents_to_run) > 1:
+            # Multiple agents - execute in parallel using ThreadPoolExecutor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents_to_run)) as executor:
+                future_to_agent = {executor.submit(agent_func): agent_name for agent_name, agent_func in agents_to_run}
+                
+                for future in concurrent.futures.as_completed(future_to_agent):
+                    agent_name = future_to_agent[future]
+                    try:
+                        result = future.result()
+                        answer = result.get('answer', f'No response from {agent_name}')
+                        results.append(f"**{agent_name}:**\n{answer}")
+                    except Exception as e:
+                        results.append(f"**{agent_name} Error:** {str(e)}")
         
-        elif "RESOURCES" in category:
-            return {"messages": [AIMessage(content="Resources Agent is not yet implemented. This would handle CPU/memory/capacity queries.")]}
+        # Add unimplemented agents notice
+        if unimplemented:
+            results.append(f"\n**Not yet implemented:** {', '.join(unimplemented)}")
         
-        elif "DESCRIBE" in category:
-            return {"messages": [AIMessage(content="Describe Agent is not yet implemented. This would handle detailed pod/node information queries.")]}
-        
-        elif "MONITOR" in category:
-            return {"messages": [AIMessage(content="Monitor Agent is not yet implemented. This would handle performance metrics queries.")]}
-        
-        elif "SECURITY" in category:
-            return {"messages": [AIMessage(content="Security Agent is not yet implemented. This would handle RBAC/security queries.")]}
-        
-        elif "OPERATIONS" in category:
-            return {"messages": [AIMessage(content="Operations Agent is not yet implemented. This would handle scaling/updates queries.")]}
-        
-        else:
-            return {"messages": [AIMessage(content=f"I couldn't classify your query (detected: {category}). Please try rephrasing your question about cluster health, resources, describe, monitor, security, or operations.")]}
+        # Combine results
+        final_answer = "\n\n".join(results)
+        return {"messages": [AIMessage(content=final_answer)]}
     
     # ========================================================================
     # TOOL NODE REMOVED - Tools now in specialized agents

@@ -1,0 +1,328 @@
+"""
+Resources Agent - CPU/memory capacity and usage monitoring
+Handles queries about resource allocation, limits, requests, and utilization
+Uses MCP Server for tool execution
+"""
+
+import os
+import asyncio
+from dotenv import load_dotenv
+from langchain_anthropic import ChatAnthropic
+from langgraph.graph import StateGraph, MessagesState
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+# Load environment variables
+load_dotenv()
+
+# Cache for compiled workflow to avoid recreating on every query
+_cached_workflow = None
+_cached_api_key = None
+
+
+async def _get_mcp_tools():
+    """Get tools from MCP Resources Server"""
+    client = MultiServerMCPClient(
+        {
+            "k8s_resources": {
+                "transport": "streamable_http",
+                "url": "http://127.0.0.1:8002/mcp"
+            }
+        }
+    )
+    tools = await client.get_tools()
+    return tools
+
+
+# ============================================================================
+# RESOURCES AGENT CREATION
+# ============================================================================
+
+def create_resources_agent(api_key: str = None, verbose: bool = False):
+    """
+    Create the Resources Agent for CPU/memory capacity and usage monitoring using MCP Server.
+    
+    Args:
+        api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
+        verbose: Whether to show agent reasoning steps
+    
+    Returns:
+        Compiled LangGraph workflow
+    """
+    # Get API key
+    anthropic_api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+    if not anthropic_api_key:
+        raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.")
+    
+    # Fetch tools from MCP server
+    tools = asyncio.run(_get_mcp_tools())
+    
+    # Initialize Claude model
+    model = ChatAnthropic(
+        model="claude-3-haiku-20240307",
+        anthropic_api_key=anthropic_api_key,
+        temperature=0,
+        max_tokens=2048
+    )
+    
+    # Bind tools to model
+    model_with_tools = model.bind_tools(tools)
+    
+    # System message for Resources Agent
+    if verbose:
+        system_msg = """You are a Kubernetes Resources Agent specializing in CPU/memory capacity and usage monitoring.
+
+YOUR RESPONSIBILITY:
+Monitor and report on resource allocation, capacity, limits, requests, and utilization.
+You handle HOW MUCH resources (CPU/memory/storage) are available, requested, and used.
+
+AVAILABLE TOOLS (5 TOOLS):
+
+1. get_node_resources()
+   - Node capacity and allocatable resources
+   - Shows total vs allocatable CPU/memory/storage
+   - Use for: "How much CPU/memory does each node have?"
+
+2. get_pod_resources(namespace='all')
+   - Pod resource requests and limits
+   - Shows which pods have resource constraints
+   - Use for: "What are pod resource limits?", "Which pods have no limits?"
+
+3. get_namespace_resources()
+   - Aggregate resources by namespace
+   - Total requests/limits per namespace
+   - Use for: "Which namespace uses most resources?"
+
+4. get_node_utilization()
+   - Current real-time resource usage on nodes
+   - Uses kubectl top nodes (requires metrics-server)
+   - Use for: "What is current node CPU/memory usage?"
+
+5. get_pod_utilization(namespace='all')
+   - Current real-time resource usage by pods
+   - Uses kubectl top pods (requires metrics-server)
+   - Use for: "Which pods are using most resources right now?"
+
+TOOL SELECTION GUIDE:
+
+"How much CPU/memory on nodes?" → get_node_resources()
+"What is node capacity?" → get_node_resources()
+
+"What are pod resource limits?" → get_pod_resources()
+"Which pods have no limits?" → get_pod_resources()
+
+"Which namespace uses most?" → get_namespace_resources()
+
+"Current node usage?" → get_node_utilization()
+"Node CPU/memory percentage?" → get_node_utilization()
+
+"Current pod usage?" → get_pod_utilization()
+"Which pods using most resources?" → get_pod_utilization()
+
+RESPONSE RULES:
+- For capacity queries → Use get_node_resources
+- For utilization queries → Use get_node_utilization or get_pod_utilization
+- For limits/requests → Use get_pod_resources or get_namespace_resources
+- If asked about HEALTH status → say "Health Agent handles that"
+- If asked about WHAT EXISTS (listing/counting) → say "Describe Agent handles that"
+- Present numbers clearly (CPU in cores/millicores, memory in Mi/Gi)
+- Highlight resources without limits set (potential issues)
+
+METRICS-SERVER NOTE:
+- kubectl top commands require metrics-server
+- If not installed, explain error and suggest using resource requests/limits instead
+
+EXAMPLES:
+
+User: "How much CPU does each node have?"
+→ get_node_resources()
+→ Present total and allocatable CPU
+
+User: "What is current node utilization?"
+→ get_node_utilization()
+→ Show CPU/memory usage percentages
+
+User: "Which pods use most memory?"
+→ get_pod_utilization('all')
+→ Sort by memory usage and show top consumers
+
+Always use tools, never guess resource values."""
+    else:
+        system_msg = """You are a Kubernetes Resources Agent. Monitor resource capacity, allocation, and usage.
+
+TOOLS:
+- get_node_resources: Node capacity and allocatable resources
+- get_pod_resources: Pod limits and requests
+- get_namespace_resources: Aggregate by namespace
+- get_node_utilization: Current node usage (needs metrics-server)
+- get_pod_utilization: Current pod usage (needs metrics-server)
+
+RULES:
+- Use tools for all resource queries
+- Health queries → Health Agent
+- Listing/counting → Describe Agent
+- Present numbers clearly (cores, Mi/Gi)"""
+    
+    # Create agent node
+    def resources_agent_node(state):
+        """Resources agent with system message"""
+        from langchain_core.messages import SystemMessage
+        
+        messages = state["messages"]
+        
+        # Add system message if not present
+        if verbose:
+            if not any(isinstance(m, SystemMessage) for m in messages):
+                messages = [SystemMessage(content=system_msg)] + messages
+            
+            response = model_with_tools.invoke(messages)
+        else:
+            # In non-verbose mode, prepend system message
+            if not any(isinstance(m, SystemMessage) for m in messages):
+                messages = [SystemMessage(content=system_msg)] + messages
+            
+            response = model_with_tools.invoke(messages)
+        
+        return {"messages": [response]}
+    
+    # Create tool node with async support for MCP tools
+    def tool_node(state):
+        """Execute MCP tools (async) and return results"""
+        from langchain_core.messages import ToolMessage
+        import asyncio
+        
+        messages = state["messages"]
+        last_message = messages[-1]
+        
+        async def execute_tools_async():
+            tool_results = []
+            
+            if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+                for tool_call in last_message.tool_calls:
+                    tool_name = tool_call["name"]
+                    tool_args = tool_call.get("args", {})
+                    
+                    # Find and execute the MCP tool
+                    tool_found = False
+                    for tool in tools:
+                        if tool.name == tool_name:
+                            tool_found = True
+                            try:
+                                # MCP tools require async invocation
+                                result = await tool.ainvoke(tool_args)
+                                tool_results.append(
+                                    ToolMessage(
+                                        content=str(result),
+                                        tool_call_id=tool_call["id"]
+                                    )
+                                )
+                            except Exception as e:
+                                tool_results.append(
+                                    ToolMessage(
+                                        content=f"Error executing {tool_name}: {str(e)}",
+                                        tool_call_id=tool_call["id"]
+                                    )
+                                )
+                            break
+                    
+                    if not tool_found:
+                        tool_results.append(
+                            ToolMessage(
+                                content=f"Tool '{tool_name}' not found",
+                                tool_call_id=tool_call["id"]
+                            )
+                        )
+            
+            return tool_results
+        
+        # Run async execution
+        tool_results = asyncio.run(execute_tools_async())
+        return {"messages": tool_results}
+    
+    # Build workflow
+    workflow = StateGraph(MessagesState)
+    
+    # Add nodes
+    workflow.add_node("resources_agent", resources_agent_node)
+    workflow.add_node("tools", tool_node)
+    
+    # Set entry point
+    workflow.set_entry_point("resources_agent")
+    
+    # Add conditional edges
+    def should_continue(state):
+        messages = state["messages"]
+        last_message = messages[-1]
+        
+        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+            # Count tool calls to prevent infinite loops
+            tool_call_count = sum(1 for m in messages if hasattr(m, 'tool_calls') and m.tool_calls)
+            if tool_call_count > 3:
+                return "__end__"
+            return "tools"
+        return "__end__"
+    
+    workflow.add_conditional_edges(
+        "resources_agent",
+        should_continue,
+        {"tools": "tools", "__end__": "__end__"}
+    )
+    
+    workflow.add_edge("tools", "resources_agent")
+    
+    return workflow
+
+
+# ============================================================================
+# AGENT INVOCATION FUNCTION
+# ============================================================================
+
+def ask_resources_agent(question: str, api_key: str = None, verbose: bool = False) -> dict:
+    """
+    Ask the Resources Agent a question and get a response.
+    Uses workflow caching for performance.
+    
+    Args:
+        question: User's question about resources
+        api_key: Anthropic API key (optional)
+        verbose: Whether to show detailed reasoning
+    
+    Returns:
+        Dict with 'answer' and 'messages'
+    """
+    global _cached_workflow, _cached_api_key
+    
+    # Get API key
+    anthropic_api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+    if not anthropic_api_key:
+        return {
+            'answer': "Error: Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.",
+            'messages': []
+        }
+    
+    # Check if we need to recreate workflow (API key changed or first run)
+    if _cached_workflow is None or _cached_api_key != anthropic_api_key:
+        _cached_workflow = create_resources_agent(api_key=anthropic_api_key, verbose=verbose).compile()
+        _cached_api_key = anthropic_api_key
+    
+    try:
+        from langchain_core.messages import HumanMessage
+        
+        # Invoke the workflow
+        result = _cached_workflow.invoke({
+            "messages": [HumanMessage(content=question)]
+        })
+        
+        # Extract the final answer
+        final_message = result["messages"][-1]
+        answer = final_message.content if hasattr(final_message, 'content') else str(final_message)
+        
+        return {
+            'answer': answer,
+            'messages': result["messages"]
+        }
+        
+    except Exception as e:
+        return {
+            'answer': f"Resources Agent error: {str(e)}",
+            'messages': []
+        }

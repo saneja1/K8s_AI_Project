@@ -20,6 +20,11 @@ MCP_DESCRIBE_SERVER_SCRIPT="MCP/mcp_describe/mcp_describe_server.py"
 MCP_DESCRIBE_PID_FILE="$APP_DIR/mcp_describe.pid"
 MCP_DESCRIBE_LOG_FILE="$APP_DIR/mcp_describe.log"
 
+MCP_RESOURCES_SERVER_NAME="mcp_resources_server"
+MCP_RESOURCES_SERVER_SCRIPT="MCP/mcp_resources/mcp_resources_server.py"
+MCP_RESOURCES_PID_FILE="$APP_DIR/mcp_resources.pid"
+MCP_RESOURCES_LOG_FILE="$APP_DIR/mcp_resources.log"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -90,6 +95,21 @@ is_mcp_describe_running() {
     fi
 }
 
+is_mcp_resources_running() {
+    if [ -f "$MCP_RESOURCES_PID_FILE" ]; then
+        MCP_PID=$(cat "$MCP_RESOURCES_PID_FILE")
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            return 0
+        else
+            # PID file exists but process is not running
+            rm -f "$MCP_RESOURCES_PID_FILE"
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
 # Function to start the app
 start() {
     echo -e "${YELLOW}Starting $APP_NAME...${NC}"
@@ -137,6 +157,24 @@ start() {
         fi
     fi
     
+    # Start MCP Resources Server
+    echo -e "${YELLOW}Starting MCP Resources Server on port 8002...${NC}"
+    export PORT=8002
+    nohup python3 "$MCP_RESOURCES_SERVER_SCRIPT" > "$MCP_RESOURCES_LOG_FILE" 2>&1 &
+    echo $! > "$MCP_RESOURCES_PID_FILE"
+    unset PORT
+    sleep 2
+    
+    if is_mcp_resources_running; then
+        echo -e "${GREEN}MCP Resources Server started successfully (PID: $(cat $MCP_RESOURCES_PID_FILE))${NC}"
+    else
+        echo -e "${RED}Failed to start MCP Resources Server${NC}"
+        if [ -f "$MCP_RESOURCES_LOG_FILE" ]; then
+            echo -e "${RED}Check logs: $MCP_RESOURCES_LOG_FILE${NC}"
+            tail -10 "$MCP_RESOURCES_LOG_FILE"
+        fi
+    fi
+    
     # Start the app in background
     echo -e "${YELLOW}Launching Flask app on port 7000...${NC}"
     nohup python3 "$PYTHON_APP" > "$LOG_FILE" 2>&1 &
@@ -152,6 +190,7 @@ start() {
         echo -e "${GREEN}App is running at: http://localhost:7000${NC}"
         echo -e "${GREEN}MCP Health Server: http://localhost:8000/mcp${NC}"
         echo -e "${GREEN}MCP Describe Server: http://localhost:8001/mcp${NC}"
+        echo -e "${GREEN}MCP Resources Server: http://localhost:8002/mcp${NC}"
         echo -e "${GREEN}Logs: $LOG_FILE${NC}"
         return 0
     else
@@ -254,6 +293,34 @@ stop() {
         echo -e "${GREEN}MCP Describe Server stopped${NC}"
     fi
     
+    echo -e "${YELLOW}Stopping MCP Resources Server...${NC}"
+    if ! is_mcp_resources_running; then
+        echo -e "${YELLOW}MCP Resources Server is not running${NC}"
+    else
+        MCP_PID=$(cat "$MCP_RESOURCES_PID_FILE")
+        
+        # Try graceful shutdown first
+        kill "$MCP_PID" 2>/dev/null
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! ps -p "$MCP_PID" > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if ps -p "$MCP_PID" > /dev/null 2>&1; then
+            echo -e "${YELLOW}Force killing MCP Resources Server...${NC}"
+            kill -9 "$MCP_PID" 2>/dev/null
+        fi
+        
+        # Clean up PID file
+        rm -f "$MCP_RESOURCES_PID_FILE"
+        echo -e "${GREEN}MCP Resources Server stopped${NC}"
+    fi
+    
     return 0
 }
 
@@ -318,6 +385,24 @@ status() {
         fi
     else
         echo -e "${RED}MCP Describe Server is not running${NC}"
+    fi
+    
+    echo ""
+    
+    # MCP Resources Server status
+    if is_mcp_resources_running; then
+        MCP_PID=$(cat "$MCP_RESOURCES_PID_FILE")
+        echo -e "${GREEN}MCP Resources Server is running (PID: $MCP_PID)${NC}"
+        echo -e "${GREEN}MCP URL: http://localhost:8002/mcp${NC}"
+        echo -e "${GREEN}Log file: $MCP_RESOURCES_LOG_FILE${NC}"
+        
+        # Show recent logs
+        if [ -f "$MCP_RESOURCES_LOG_FILE" ]; then
+            echo -e "\n${YELLOW}Recent MCP Resources server logs:${NC}"
+            tail -5 "$MCP_RESOURCES_LOG_FILE"
+        fi
+    else
+        echo -e "${RED}MCP Resources Server is not running${NC}"
     fi
 }
 
