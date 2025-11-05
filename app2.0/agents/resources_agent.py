@@ -17,6 +17,7 @@ load_dotenv()
 # Cache for compiled workflow to avoid recreating on every query
 _cached_workflow = None
 _cached_api_key = None
+_cache_version = 7  # Increment this to force workflow recreation
 
 
 async def _get_mcp_tools():
@@ -71,11 +72,21 @@ def create_resources_agent(api_key: str = None, verbose: bool = False):
     if verbose:
         system_msg = """You are a Kubernetes Resources Agent specializing in CPU/memory capacity and usage monitoring.
 
+🚨 **FIRST CHECK THIS PATTERN** 🚨
+BEFORE doing ANYTHING else, check if the user's question contains:
+  - Words: "highest" OR "most" OR "largest" 
+  - AND words: "memory" OR "mem"
+  - AND words: "pod" OR "pods"
+
+IF YES → STOP! Call get_pod_memory_comparison() tool IMMEDIATELY. Do NOT read further instructions until you call this tool.
+
+IF NO → Continue reading below.
+
 YOUR RESPONSIBILITY:
 Monitor and report on resource allocation, capacity, limits, requests, and utilization.
 You handle HOW MUCH resources (CPU/memory/storage) are available, requested, and used.
 
-AVAILABLE TOOLS (5 TOOLS):
+AVAILABLE TOOLS (6 TOOLS):
 
 1. get_node_resources()
    - Node capacity and allocatable resources
@@ -83,9 +94,10 @@ AVAILABLE TOOLS (5 TOOLS):
    - Use for: "How much CPU/memory does each node have?"
 
 2. get_pod_resources(namespace='all')
-   - Pod resource requests and limits
+   - Pod resource requests and limits (CPU and memory) as JSON
    - Shows which pods have resource constraints
-   - Use for: "What are pod resource limits?", "Which pods have no limits?"
+   - **CRITICAL: Returns JSON that you MUST parse to find highest memory pod**
+   - Use for: "What are pod resource limits?", "Which pods have no limits?", **"Which pod has highest memory?"**
 
 3. get_namespace_resources()
    - Aggregate resources by namespace
@@ -102,6 +114,13 @@ AVAILABLE TOOLS (5 TOOLS):
    - Uses kubectl top pods (requires metrics-server)
    - Use for: "Which pods are using most resources right now?"
 
+6. get_pod_memory_comparison(namespace='all')
+   - **CRITICAL TOOL** - Automatically compares CPU AND memory across ALL pods
+   - Parses JSON, calculates totals, sorts by CPU/memory, returns highest
+   - **USE THIS FIRST for any "highest/most CPU or memory" query**
+   - Returns pre-formatted output with sorted pods and winners for both CPU and memory
+   - Works WITHOUT metrics-server (uses resource requests/limits)
+
 TOOL SELECTION GUIDE:
 
 "How much CPU/memory on nodes?" → get_node_resources()
@@ -117,6 +136,40 @@ TOOL SELECTION GUIDE:
 
 "Current pod usage?" → get_pod_utilization()
 "Which pods using most resources?" → get_pod_utilization()
+
+**HIGHEST/MOST CPU OR MEMORY QUERIES - ALWAYS USE get_pod_memory_comparison():**
+"Which pod has highest CPU?" → get_pod_memory_comparison()
+"Find pod with most CPU" → get_pod_memory_comparison()
+"Pod with largest CPU allocation" → get_pod_memory_comparison()
+"Which pod uses most CPU?" → get_pod_memory_comparison()
+"Which pod has highest memory?" → get_pod_memory_comparison()
+"Find pod with most memory" → get_pod_memory_comparison()
+"Pod with largest memory allocation" → get_pod_memory_comparison()
+"Which pod uses most memory?" → get_pod_memory_comparison()
+"Find pod with highest memory usage" → get_pod_memory_comparison()
+"Highest memory pod" → get_pod_memory_comparison()
+"...and find pod with highest memory..." → get_pod_memory_comparison()
+"...pod with.*memory.*highest..." → get_pod_memory_comparison()
+
+**CRITICAL PATTERN MATCHING RULE:** 
+If the user's question contains ANY of these words together:
+  - ("pod" OR "pods") AND ("highest" OR "most" OR "largest") AND "memory"
+  
+Then you MUST:
+1. IMMEDIATELY call get_pod_memory_comparison() tool AS YOUR FIRST ACTION
+2. DO NOT call get_pod_utilization() or get_node_resources() first
+3. DO NOT say "metrics-server unavailable" - this tool works without it
+4. IGNORE other parts of the question temporarily - focus on memory comparison first
+5. After getting the result, THEN you can address other parts of the question
+
+Example: User asks "check pods and find highest memory and check health"
+  → You see "find highest memory" → IMMEDIATELY call get_pod_memory_comparison()
+  → Report the result: "Pod X has highest memory with Y Mi"
+  → Then address other parts if needed
+2. DO NOT call get_pod_utilization() or get_pod_resources()
+3. The get_pod_memory_comparison() tool does everything - parsing, comparing, finding winner
+4. Just report what the tool returns
+5. NEVER say "metrics-server unavailable" without calling get_pod_memory_comparison() first
 
 RESPONSE RULES:
 - For capacity queries → Use get_node_resources
@@ -155,18 +208,23 @@ Always use tools, never guess resource values."""
     else:
         system_msg = """You are a Kubernetes Resources Agent. Monitor resource capacity, allocation, and usage.
 
+🚨 URGENT: If question contains "highest/most CPU or memory" + "pod" → call get_pod_memory_comparison() FIRST! 🚨
+
 TOOLS:
 - get_node_resources: Node capacity and allocatable resources
-- get_pod_resources: Pod limits and requests
+- get_pod_resources: Pod limits and requests  
 - get_namespace_resources: Aggregate by namespace
 - get_node_utilization: Current node usage (needs metrics-server)
 - get_pod_utilization: Current pod usage (needs metrics-server)
+- get_pod_memory_comparison: **Find pod with highest CPU or memory** (works WITHOUT metrics-server)
 
-RULES:
-- Use tools for all resource queries
-- Health queries → Health Agent
-- Listing/counting → Describe Agent
-- Present numbers clearly (cores, Mi/Gi)"""
+CRITICAL RULES:
+1. Question has "highest/most/largest" + "memory" + "pod"? → Use get_pod_memory_comparison() immediately
+2. Do NOT use get_node_resources or get_pod_utilization for "highest memory pod" questions
+3. get_pod_memory_comparison() works WITHOUT metrics-server - always try it first
+4. Health queries → Health Agent
+5. Listing/counting → Describe Agent
+6. Present numbers clearly (cores, Mi/Gi)"""
     
     # Create agent node
     def resources_agent_node(state):
@@ -318,6 +376,10 @@ def ask_resources_agent(question: str, api_key: str = None, verbose: bool = Fals
             'answer': "Error: Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.",
             'messages': []
         }
+    
+    # FORCE WORKFLOW RECREATION - Don't use cache for now to ensure new tool is loaded
+    _cached_workflow = None
+    _cached_api_key = None
     
     # Check if we need to recreate workflow (API key changed or first run)
     if _cached_workflow is None or _cached_api_key != anthropic_api_key:

@@ -8,6 +8,9 @@ import subprocess
 import time
 from mcp.server.fastmcp import FastMCP
 
+# Import tool implementations from tools_resources
+from tools_resources import get_pod_memory_comparison as _get_pod_memory_comparison_impl
+
 # Get port from environment or default to 8002
 port = int(os.getenv('PORT', '8002'))
 
@@ -222,6 +225,23 @@ def get_pod_utilization(namespace: str = "all") -> str:
             return f"Error executing command: {str(e)}"
     
     return _cached_kubectl_command(cache_key, _execute)
+
+
+@mcp.tool()
+def get_pod_memory_comparison(namespace: str = "all") -> str:
+    """
+    Compare CPU and memory allocation/requests across all pods to find highest usage.
+    Parses pod resource requests/limits to identify which pod has highest CPU or memory configured.
+    BEST TOOL for finding "which pod has highest CPU or memory" questions.
+    
+    Args:
+        namespace: Namespace to check (default: "all" for all namespaces)
+    
+    Returns:
+        String with pods sorted by CPU and memory allocation (highest first)
+    """
+    # Use the implementation from tools_resources.py (call .invoke() on StructuredTool)
+    return _get_pod_memory_comparison_impl.invoke({"namespace": namespace})
 
 
 if __name__ == "__main__":

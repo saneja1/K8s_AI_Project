@@ -91,22 +91,31 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
 Query: "{user_question}"
 
 Categories:
-1. HEALTH - node health status, cluster events, errors, warnings (node-level only)
+1. HEALTH - Node health status, cluster-level events, control plane component health (NOT individual pod health/status)
 2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests, utilization
-3. DESCRIBE - list/count/describe specific K8s resources (pods, services, deployments, namespaces, etc.)
-4. MONITOR - performance metrics, resource usage over time, trends
+3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods
+4. MONITOR - Performance metrics, resource usage over time, trends
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
-6. OPERATIONS - scaling, updates, rollouts, restarts, maintenance
+6. OPERATIONS - Scaling, updates, rollouts, restarts, maintenance
 
 IMPORTANT ROUTING RULES:
 - "cluster status" → HEALTH,RESOURCES (never DESCRIBE unless asking to list specific resources)
 - "cluster health" or "is cluster healthy" → HEALTH (ONLY)
+- "node health" or "node status" → HEALTH (ONLY)
+- "control plane health" → HEALTH (ONLY)
+
+- **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE (ONLY)
+- **"pods failing" or "pods in error" or "crashed pods"** → DESCRIBE (ONLY)
+- **"which pods are running/pending/failed"** → DESCRIBE (ONLY)
+
 - "resources" (without "list" or "show me all") → RESOURCES (ONLY)
 
 - "CPU/memory/disk capacity" → RESOURCES (ONLY)
 - "resource limits/requests/allocation" → RESOURCES (ONLY)
 - "pod resource" or "node resource" → RESOURCES (ONLY)
 - "resource usage/utilization" → RESOURCES (ONLY)
+- **"highest memory" or "most memory" or "find pod with memory"** → RESOURCES (ONLY)
+- **"which pod uses most" or "largest memory"** → RESOURCES (ONLY)
 
 - "list pods/services/deployments" → DESCRIBE (ONLY)
 - "how many pods/services" → DESCRIBE (ONLY)
@@ -117,6 +126,7 @@ IMPORTANT ROUTING RULES:
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
 - "list nodes with their status" → DESCRIBE,HEALTH (parallel)
 - "node capacity AND health" → RESOURCES,HEALTH (parallel)
+- **"count pods AND highest memory AND cluster health"** → DESCRIBE,RESOURCES,HEALTH (all 3)
 
 CRITICAL: Respond with ONLY comma-separated category names, nothing else.
 Examples:
@@ -133,17 +143,73 @@ Your response (category names only):"""
         categories_str = classification_response.content.strip().upper()
         categories = [cat.strip() for cat in categories_str.split(',')]
         
-        # Collect agents to execute
+        # Extract sub-questions for each agent
+        extraction_prompt = f"""Break down this complex question into specific sub-questions for each category.
+
+Original question: "{user_question}"
+
+Categories detected: {categories_str}
+
+For each category, extract ALL relevant parts of the question:
+
+HEALTH category: Extract node health, cluster health, control plane health parts
+DESCRIBE category: Extract listing/counting/describing pods/services/deployments/namespaces parts, AND pod status/health parts (unhealthy pods, failing pods, pod errors)
+RESOURCES category: Extract resource/capacity/usage/limits/requests parts
+
+Format your response EXACTLY like this:
+HEALTH: <health sub-question or "N/A">
+DESCRIBE: <describe sub-question or "N/A">
+RESOURCES: <resources sub-question or "N/A">
+
+Examples:
+Original: "check no of pods and find highest memory pod and check cluster health"
+HEALTH: check cluster health
+DESCRIBE: how many pods in the cluster
+RESOURCES: find pod with highest memory
+
+Original: "what pods are in default namespace, which pod uses most CPU, and are there any unhealthy pods"
+HEALTH: N/A
+DESCRIBE: what pods are in default namespace and are there any unhealthy pods
+RESOURCES: which pod uses most CPU
+
+Your response:"""
+
+        extraction_response = model.invoke([HumanMessage(content=extraction_prompt)])
+        extraction_text = extraction_response.content.strip()
+        
+        # Parse extracted sub-questions
+        sub_questions = {}
+        for line in extraction_text.split('\n'):
+            if ':' in line:
+                category, question = line.split(':', 1)
+                category = category.strip().upper()
+                question = question.strip()
+                if question and question.upper() != 'N/A':
+                    sub_questions[category] = question
+        
+        # Collect agents to execute with their specific sub-questions
         agents_to_run = []
         
+        # Debug flag (set SHOW_ROUTING=1 to see sub-question routing)
+        show_routing = os.getenv('SHOW_ROUTING', '0') == '1'
+        
         if "HEALTH" in categories:
-            agents_to_run.append(("Health Agent", lambda: ask_health_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+            health_q = sub_questions.get('HEALTH', user_question)
+            if show_routing:
+                print(f"🔧 DEBUG: Health Agent sub-question: '{health_q}'")
+            agents_to_run.append(("Health Agent", lambda q=health_q: ask_health_agent(q, api_key=anthropic_api_key, verbose=verbose)))
         
         if "DESCRIBE" in categories:
-            agents_to_run.append(("Describe Agent", lambda: ask_describe_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+            describe_q = sub_questions.get('DESCRIBE', user_question)
+            if show_routing:
+                print(f"🔧 DEBUG: Describe Agent sub-question: '{describe_q}'")
+            agents_to_run.append(("Describe Agent", lambda q=describe_q: ask_describe_agent(q, api_key=anthropic_api_key, verbose=verbose)))
         
         if "RESOURCES" in categories:
-            agents_to_run.append(("Resources Agent", lambda: ask_resources_agent(user_question, api_key=anthropic_api_key, verbose=verbose)))
+            resources_q = sub_questions.get('RESOURCES', user_question)
+            if show_routing:
+                print(f"🔧 DEBUG: Resources Agent sub-question: '{resources_q}'")
+            agents_to_run.append(("Resources Agent", lambda q=resources_q: ask_resources_agent(q, api_key=anthropic_api_key, verbose=verbose)))
         
         # Check for unimplemented agents
         unimplemented = []
