@@ -52,7 +52,7 @@ def get_node_resources() -> str:
                 "--zone=us-central1-a",
                 f"--command={full_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0:
                 return result.stdout
@@ -90,7 +90,7 @@ def get_pod_resources(namespace: str = "all") -> str:
                 "--zone=us-central1-a",
                 f"--command={full_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0:
                 return result.stdout
@@ -122,7 +122,7 @@ def get_namespace_resources() -> str:
                 "--zone=us-central1-a",
                 f"--command={full_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0:
                 return result.stdout
@@ -156,7 +156,7 @@ def get_node_utilization() -> str:
                 "--zone=us-central1-a",
                 f"--command={top_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0 and "error" not in result.stderr.lower():
                 return result.stdout
@@ -169,7 +169,7 @@ def get_node_utilization() -> str:
                 "--zone=us-central1-a",
                 f"--command={describe_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0:
                 fallback_msg = (
@@ -212,7 +212,7 @@ def get_pod_utilization(namespace: str = "all") -> str:
                 "--zone=us-central1-a",
                 f"--command={full_command}",
                 "--quiet"
-            ], capture_output=True, text=True, timeout=10)
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
             
             if result.returncode == 0:
                 return result.stdout

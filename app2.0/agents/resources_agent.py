@@ -124,8 +124,14 @@ RESPONSE RULES:
 - For limits/requests → Use get_pod_resources or get_namespace_resources
 - If asked about HEALTH status → say "Health Agent handles that"
 - If asked about WHAT EXISTS (listing/counting) → say "Describe Agent handles that"
+- **CRITICAL: NEVER count pods or say "X pods running" - that's Describe Agent's job. Focus ONLY on resource numbers (CPU/memory)**
+- **CRITICAL: NEVER return raw JSON or kubectl output. Always analyze and summarize in plain English**
+- **CRITICAL: If tool output says "METRICS-SERVER NOT AVAILABLE", you MUST clearly state you're showing ALLOCATED/RESERVED resources, NOT real-time usage**
 - Present numbers clearly (CPU in cores/millicores, memory in Mi/Gi)
 - Highlight resources without limits set (potential issues)
+- Format like: "Node X has Y cores and Z GB memory. Allocated: A% (NOT current usage - metrics-server unavailable)."
+- When metrics-server is unavailable, say "allocated" or "reserved" NOT "using" or "consuming"
+- Focus on CPU/memory capacity and allocation - do NOT mention pod counts
 
 METRICS-SERVER NOTE:
 - kubectl top commands require metrics-server
@@ -165,18 +171,32 @@ RULES:
     # Create agent node
     def resources_agent_node(state):
         """Resources agent with system message"""
-        from langchain_core.messages import SystemMessage
+        from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
         
         messages = state["messages"]
         
-        # Add system message if not present
-        if verbose:
-            if not any(isinstance(m, SystemMessage) for m in messages):
-                messages = [SystemMessage(content=system_msg)] + messages
-            
-            response = model_with_tools.invoke(messages)
+        # Check if we have tool results and need final answer
+        has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
+        last_message = messages[-1]
+        has_pending_tool_calls = hasattr(last_message, 'tool_calls') and last_message.tool_calls
+        
+        if has_tool_results and not has_pending_tool_calls:
+            # Force final summary - no raw JSON
+            messages_with_system = [SystemMessage(content=system_msg)] + messages + [
+                HumanMessage(content="""Now provide a clear, concise summary of the resource information. 
+                
+CRITICAL INSTRUCTIONS:
+- NO raw JSON - only human-readable text with specific numbers
+- If the tool output contains '⚠️ METRICS-SERVER NOT AVAILABLE', you MUST explicitly state this is ALLOCATED/RESERVED resources, NOT actual real-time usage
+- Use words like "allocated", "reserved", "requested" - NEVER say "using", "consuming", or "current usage"
+- Example: "Master node has 950m CPU ALLOCATED (47% of requests)" NOT "Master node is using 950m CPU"
+- DO NOT mention pod counts or say "X pods running" - focus ONLY on CPU/memory/storage numbers
+- DO NOT say things like "8 pods" or "total pods" - that information belongs to a different agent
+""")
+            ]
+            response = model_with_tools.invoke(messages_with_system)
         else:
-            # In non-verbose mode, prepend system message
+            # Normal flow
             if not any(isinstance(m, SystemMessage) for m in messages):
                 messages = [SystemMessage(content=system_msg)] + messages
             
@@ -312,9 +332,24 @@ def ask_resources_agent(question: str, api_key: str = None, verbose: bool = Fals
             "messages": [HumanMessage(content=question)]
         })
         
-        # Extract the final answer
-        final_message = result["messages"][-1]
-        answer = final_message.content if hasattr(final_message, 'content') else str(final_message)
+        # Extract the final answer from last AIMessage
+        # Look backwards through messages to find the last AIMessage with actual text content
+        answer = "No response generated"
+        for msg in reversed(result["messages"]):
+            if hasattr(msg, 'content'):
+                if isinstance(msg.content, str) and msg.content.strip():
+                    answer = msg.content
+                    break
+                elif isinstance(msg.content, list):
+                    # Extract text from content blocks
+                    text_parts = [
+                        block.get('text', '') if isinstance(block, dict) else str(block)
+                        for block in msg.content
+                        if isinstance(block, dict) and block.get('type') == 'text'
+                    ]
+                    if text_parts:
+                        answer = " ".join(text_parts)
+                        break
         
         return {
             'answer': answer,

@@ -130,9 +130,9 @@ def get_node_utilization() -> str:
         
         if result.returncode == 0:
             fallback_msg = (
-                "NOTE: Metrics server is not available. Showing ALLOCATED RESOURCES (pod requests) "
-                "instead of real-time utilization. This shows what resources are promised to pods, "
-                "not actual current usage.\n\n"
+                "⚠️ METRICS-SERVER NOT AVAILABLE ⚠️\n"
+                "Showing ALLOCATED RESOURCES (pod requests) instead of real-time utilization.\n"
+                "This represents resources RESERVED for pods, not actual current usage.\n\n"
             )
             return fallback_msg + result.stdout
         else:
@@ -146,28 +146,48 @@ def get_pod_utilization(namespace: str = "all") -> str:
     """
     Get current resource usage by pods (requires metrics-server).
     Shows real-time CPU and memory usage for pods.
+    Falls back to pod resource requests if metrics-server unavailable.
     
     Args:
         namespace: Namespace to check (default: "all" for all namespaces)
     
     Returns:
-        String with pod utilization metrics
+        String with pod utilization metrics or allocated resources
     """
     try:
+        # First try kubectl top pods for real-time metrics
         if namespace == "all":
-            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -A"
+            top_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -A"
         else:
-            full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
+            top_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
         
         result = subprocess.run([
             "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
             "--zone=us-central1-a",
-            f"--command={full_command}",
+            f"--command={top_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0 and "error" not in result.stderr.lower():
+            return result.stdout
+        
+        # Fallback to kubectl describe nodes for allocated resources
+        describe_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a",
+            f"--command={describe_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
         
         if result.returncode == 0:
-            return result.stdout
+            fallback_msg = (
+                "⚠️ METRICS-SERVER NOT AVAILABLE ⚠️\n"
+                "Showing ALLOCATED RESOURCES (pod requests/limits) instead of real-time usage.\n"
+                "This represents resources RESERVED for pods, not actual current consumption.\n\n"
+            )
+            return fallback_msg + result.stdout
         else:
             return f"Error: {result.stderr}"
     except Exception as e:

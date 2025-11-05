@@ -92,27 +92,27 @@ Query: "{user_question}"
 
 Categories:
 1. HEALTH - node health status, cluster events, errors, warnings (node-level only)
-2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests
-3. DESCRIBE - list/count/describe ANY K8s resources (pods, services, deployments, namespaces, etc.)
+2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests, utilization
+3. DESCRIBE - list/count/describe specific K8s resources (pods, services, deployments, namespaces, etc.)
 4. MONITOR - performance metrics, resource usage over time, trends
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
 6. OPERATIONS - scaling, updates, rollouts, restarts, maintenance
 
 IMPORTANT ROUTING RULES:
+- "cluster status" → HEALTH,RESOURCES (never DESCRIBE unless asking to list specific resources)
+- "cluster health" or "is cluster healthy" → HEALTH (ONLY)
+- "resources" (without "list" or "show me all") → RESOURCES (ONLY)
+
 - "CPU/memory/disk capacity" → RESOURCES (ONLY)
-- "resource limits/requests" → RESOURCES (ONLY)
+- "resource limits/requests/allocation" → RESOURCES (ONLY)
 - "pod resource" or "node resource" → RESOURCES (ONLY)
-- "allocatable resources" → RESOURCES (ONLY)
 - "resource usage/utilization" → RESOURCES (ONLY)
 
 - "list pods/services/deployments" → DESCRIBE (ONLY)
 - "how many pods/services" → DESCRIBE (ONLY)
 - "describe pod/service/deployment" → DESCRIBE (ONLY)
 - "what namespaces exist" → DESCRIBE (ONLY)
-- "show me all X" → DESCRIBE (where X is resource type, not resource metrics)
-
-- "is cluster healthy" or "node status" → HEALTH (ONLY)
-- "any errors/warnings" → HEALTH (ONLY)
+- "show me all X" → DESCRIBE (where X is specific resource type like pods, not general status)
 
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
 - "list nodes with their status" → DESCRIBE,HEALTH (parallel)
@@ -122,7 +122,7 @@ CRITICAL: Respond with ONLY comma-separated category names, nothing else.
 Examples:
 - "HEALTH"
 - "DESCRIBE"
-- "RESOURCES"
+- "RESOURCES,HEALTH"
 - "DESCRIBE,HEALTH"
 - "RESOURCES,HEALTH"
 
@@ -171,25 +171,60 @@ Your response (category names only):"""
                 results.append(f"**{agent_name} Error:** {str(e)}")
         
         elif len(agents_to_run) > 1:
-            # Multiple agents - execute in parallel using ThreadPoolExecutor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents_to_run)) as executor:
-                future_to_agent = {executor.submit(agent_func): agent_name for agent_name, agent_func in agents_to_run}
-                
-                for future in concurrent.futures.as_completed(future_to_agent):
-                    agent_name = future_to_agent[future]
-                    try:
-                        result = future.result()
-                        answer = result.get('answer', f'No response from {agent_name}')
-                        results.append(f"**{agent_name}:**\n{answer}")
-                    except Exception as e:
-                        results.append(f"**{agent_name} Error:** {str(e)}")
+            # Multiple agents - execute SEQUENTIALLY to prevent output mixing
+            # (Parallel execution causes subprocess stdout leakage)
+            for agent_name, agent_func in agents_to_run:
+                try:
+                    result = agent_func()
+                    answer = result.get('answer', f'No response from {agent_name}')
+                    results.append(f"**{agent_name}:**\n{answer}")
+                except Exception as e:
+                    results.append(f"**{agent_name} Error:** {str(e)}")
         
         # Add unimplemented agents notice
         if unimplemented:
             results.append(f"\n**Not yet implemented:** {', '.join(unimplemented)}")
         
-        # Combine results
-        final_answer = "\n\n".join(results)
+        # If multiple agents responded, synthesize the answers
+        if len(agents_to_run) > 1:
+            from langchain_anthropic import ChatAnthropic
+            
+            # Combine all agent responses
+            combined_responses = "\n\n".join(results)
+            
+            # Create synthesis prompt
+            synthesis_prompt = f"""You are a Kubernetes cluster assistant. Multiple specialized agents have provided information about different aspects of the cluster.
+
+User's original question: "{user_question}"
+
+Agent responses:
+{combined_responses}
+
+Synthesize these responses into a single, coherent answer that:
+1. Directly answers the user's question
+2. Combines insights from all agents
+3. Is concise and well-organized
+4. Removes redundancy between agent answers
+5. Presents a unified view of the cluster state
+
+Provide ONLY the synthesized answer, without mentioning the agents or showing their individual responses."""
+
+            try:
+                synthesizer = ChatAnthropic(
+                    model="claude-3-haiku-20240307",
+                    api_key=anthropic_api_key,
+                    temperature=0
+                )
+                
+                synthesis_result = synthesizer.invoke(synthesis_prompt)
+                final_answer = synthesis_result.content
+            except Exception as e:
+                # Fallback to simple concatenation if synthesis fails
+                final_answer = combined_responses
+        else:
+            # Single agent - no synthesis needed
+            final_answer = "\n\n".join(results)
+        
         return {"messages": [AIMessage(content=final_answer)]}
     
     # ========================================================================
