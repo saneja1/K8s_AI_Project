@@ -15,6 +15,7 @@ from langgraph.graph import StateGraph, MessagesState
 from .health_agent import ask_health_agent
 from .describe_agent import ask_describe_agent
 from .resources_agent import ask_resources_agent
+from .operations_agent import run_operations_agent
 
 # Load environment variables
 load_dotenv()
@@ -91,31 +92,42 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
 Query: "{user_question}"
 
 Categories:
-1. HEALTH - Node health status, cluster-level events, control plane component health (NOT individual pod health/status)
-2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests, utilization
+1. HEALTH - Node health status, node readiness, cluster-level events, control plane component health, cluster health check (NOT individual pod health/status)
+2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests, utilization, resource usage metrics
 3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods
 4. MONITOR - Performance metrics, resource usage over time, trends
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
-6. OPERATIONS - Scaling, updates, rollouts, restarts, maintenance
+6. OPERATIONS - Scaling deployments, updates, rollouts, restarts, maintenance, creating/deleting resources, applying YAML configs
 
 IMPORTANT ROUTING RULES:
-- "cluster status" → HEALTH,RESOURCES (never DESCRIBE unless asking to list specific resources)
-- "cluster health" or "is cluster healthy" → HEALTH (ONLY)
-- "node health" or "node status" → HEALTH (ONLY)
-- "control plane health" → HEALTH (ONLY)
 
-- **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE (ONLY)
-- **"pods failing" or "pods in error" or "crashed pods"** → DESCRIBE (ONLY)
-- **"which pods are running/pending/failed"** → DESCRIBE (ONLY)
+HEALTH CATEGORY (node/cluster health, NOT resource usage):
+- "cluster health" or "is cluster healthy" or "cluster status" → HEALTH
+- **"node health" or "node status" or "check nodes" or "node readiness"** → HEALTH
+- "control plane health" → HEALTH
+- "cluster events" → HEALTH
 
-- "resources" (without "list" or "show me all") → RESOURCES (ONLY)
+RESOURCES CATEGORY (CPU/memory/disk metrics and usage):
+- **"highest memory" or "most memory" or "which pod uses most memory"** → RESOURCES (ONLY)
+- **"which pod uses most CPU" or "largest CPU/memory"** → RESOURCES (ONLY)
+- **"find pod with highest/most resource"** → RESOURCES (ONLY)
+- "CPU/memory/disk capacity" → RESOURCES
+- "resource limits/requests/allocation" → RESOURCES
+- "resource usage/utilization" → RESOURCES
 
-- "CPU/memory/disk capacity" → RESOURCES (ONLY)
-- "resource limits/requests/allocation" → RESOURCES (ONLY)
-- "pod resource" or "node resource" → RESOURCES (ONLY)
-- "resource usage/utilization" → RESOURCES (ONLY)
-- **"highest memory" or "most memory" or "find pod with memory"** → RESOURCES (ONLY)
-- **"which pod uses most" or "largest memory"** → RESOURCES (ONLY)
+DESCRIBE CATEGORY (listing/counting resources, pod status):
+- **"list pods/services/deployments"** → DESCRIBE (ONLY)
+- **"how many pods/services" or "count pods"** → DESCRIBE (ONLY)
+- "describe pod/service/deployment" → DESCRIBE
+- "what namespaces exist" → DESCRIBE
+- **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE
+- **"pods failing" or "pods in error" or "crashed pods"** → DESCRIBE
+- **"which pods are running/pending/failed"** → DESCRIBE
+
+OPERATIONS CATEGORY (write operations):
+- **"scale deployment" or "scale to X replicas"** → OPERATIONS (ONLY)
+- **"create configmap/pod/deployment" or "delete namespace"** → OPERATIONS (ONLY)
+- **"apply YAML" or "restart deployment" or "rollback"** → OPERATIONS (ONLY)
 
 - "list pods/services/deployments" → DESCRIBE (ONLY)
 - "how many pods/services" → DESCRIBE (ONLY)
@@ -123,10 +135,18 @@ IMPORTANT ROUTING RULES:
 - "what namespaces exist" → DESCRIBE (ONLY)
 - "show me all X" → DESCRIBE (where X is specific resource type like pods, not general status)
 
+- **"scale deployment" or "scale to X replicas"** → OPERATIONS (ONLY)
+- **"create configmap/pod/deployment" or "delete namespace"** → OPERATIONS (ONLY)
+- **"apply YAML" or "restart deployment" or "rollback"** → OPERATIONS (ONLY)
+
+MULTI-AGENT EXAMPLES:
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
 - "list nodes with their status" → DESCRIBE,HEALTH (parallel)
 - "node capacity AND health" → RESOURCES,HEALTH (parallel)
 - **"count pods AND highest memory AND cluster health"** → DESCRIBE,RESOURCES,HEALTH (all 3)
+- **"scale deployment AND check node health"** → OPERATIONS,HEALTH (parallel)
+- **"list deployments AND which pod uses most memory"** → DESCRIBE,RESOURCES (parallel)
+- **"scale to 4 replicas, check cluster health, list deployments, highest memory pod"** → OPERATIONS,HEALTH,DESCRIBE,RESOURCES (all 4)
 
 CRITICAL: Respond with ONLY comma-separated category names, nothing else.
 Examples:
@@ -135,6 +155,8 @@ Examples:
 - "RESOURCES,HEALTH"
 - "DESCRIBE,HEALTH"
 - "RESOURCES,HEALTH"
+- "OPERATIONS,HEALTH"
+- "OPERATIONS,DESCRIBE"
 
 Your response (category names only):"""
         
@@ -155,22 +177,32 @@ For each category, extract ALL relevant parts of the question:
 HEALTH category: Extract node health, cluster health, control plane health parts
 DESCRIBE category: Extract listing/counting/describing pods/services/deployments/namespaces parts, AND pod status/health parts (unhealthy pods, failing pods, pod errors)
 RESOURCES category: Extract resource/capacity/usage/limits/requests parts
+OPERATIONS category: Extract scaling, deployment updates, rollouts, restarts, pod/namespace creation/deletion, YAML apply parts
 
 Format your response EXACTLY like this:
 HEALTH: <health sub-question or "N/A">
 DESCRIBE: <describe sub-question or "N/A">
 RESOURCES: <resources sub-question or "N/A">
+OPERATIONS: <operations sub-question or "N/A">
 
 Examples:
 Original: "check no of pods and find highest memory pod and check cluster health"
 HEALTH: check cluster health
 DESCRIBE: how many pods in the cluster
 RESOURCES: find pod with highest memory
+OPERATIONS: N/A
 
-Original: "what pods are in default namespace, which pod uses most CPU, and are there any unhealthy pods"
+Original: "scale stress-tester to 5 replicas and check node health"
+HEALTH: check node health
+DESCRIBE: N/A
+RESOURCES: N/A
+OPERATIONS: scale stress-tester deployment to 5 replicas
+
+Original: "create a configmap named test-config and list all pods"
 HEALTH: N/A
-DESCRIBE: what pods are in default namespace and are there any unhealthy pods
-RESOURCES: which pod uses most CPU
+DESCRIBE: list all pods
+RESOURCES: N/A
+OPERATIONS: create a configmap named test-config
 
 Your response:"""
 
@@ -211,14 +243,18 @@ Your response:"""
                 print(f"🔧 DEBUG: Resources Agent sub-question: '{resources_q}'")
             agents_to_run.append(("Resources Agent", lambda q=resources_q: ask_resources_agent(q, api_key=anthropic_api_key, verbose=verbose)))
         
+        if "OPERATIONS" in categories:
+            operations_q = sub_questions.get('OPERATIONS', user_question)
+            if show_routing:
+                print(f"🔧 DEBUG: Operations Agent sub-question: '{operations_q}'")
+            agents_to_run.append(("Operations Agent", lambda q=operations_q: {"answer": run_operations_agent(q, api_key=anthropic_api_key)}))
+        
         # Check for unimplemented agents
         unimplemented = []
         if "MONITOR" in categories:
             unimplemented.append("Monitor Agent (performance metrics)")
         if "SECURITY" in categories:
             unimplemented.append("Security Agent (RBAC/security)")
-        if "OPERATIONS" in categories:
-            unimplemented.append("Operations Agent (scaling/updates)")
         
         # Execute agents (parallel if multiple)
         if not agents_to_run and not unimplemented:
@@ -237,15 +273,26 @@ Your response:"""
                 results.append(f"**{agent_name} Error:** {str(e)}")
         
         elif len(agents_to_run) > 1:
-            # Multiple agents - execute SEQUENTIALLY to prevent output mixing
-            # (Parallel execution causes subprocess stdout leakage)
-            for agent_name, agent_func in agents_to_run:
-                try:
-                    result = agent_func()
-                    answer = result.get('answer', f'No response from {agent_name}')
-                    results.append(f"**{agent_name}:**\n{answer}")
-                except Exception as e:
-                    results.append(f"**{agent_name} Error:** {str(e)}")
+            # Multiple agents - execute in PARALLEL using ThreadPoolExecutor
+            # This is faster than sequential execution
+            import concurrent.futures
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents_to_run)) as executor:
+                # Submit all agent functions to thread pool
+                future_to_agent = {
+                    executor.submit(agent_func): agent_name 
+                    for agent_name, agent_func in agents_to_run
+                }
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_agent):
+                    agent_name = future_to_agent[future]
+                    try:
+                        result = future.result()
+                        answer = result.get('answer', f'No response from {agent_name}')
+                        results.append(f"**{agent_name}:**\n{answer}")
+                    except Exception as e:
+                        results.append(f"**{agent_name} Error:** {str(e)}")
         
         # Add unimplemented agents notice
         if unimplemented:
