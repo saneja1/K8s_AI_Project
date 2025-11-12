@@ -179,7 +179,7 @@ def get_node_metrics(node_name: str = "", metric_type: str = "all") -> str:
         if metric_type in ["cpu", "all"]:
             # Get CPU usage percentage
             if node_name:
-                cpu_query = f"100 - (avg(rate(node_cpu_seconds_total{{{label_selector}, mode='idle'}}[5m])) * 100)"
+                cpu_query = f"100 - (avg by(job, instance) (rate(node_cpu_seconds_total{{{label_selector}, mode='idle'}}[5m])) * 100)"
             else:
                 cpu_query = "100 - (avg by(job, instance) (rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)"
             
@@ -256,6 +256,93 @@ def get_node_metrics(node_name: str = "", metric_type: str = "all") -> str:
                         value_bytes = float(item.get('value', [None, None])[1])
                         value_gb = value_bytes / (1024**3)
                         output += f"  {display_name}: {value_gb:.2f} GB ({value_bytes:,.0f} bytes)\n"
+                    output += "\n"
+        
+        # Disk metrics
+        if metric_type in ["disk", "all"]:
+            # Get disk usage percentage for root filesystem
+            if node_name:
+                disk_query = f"(node_filesystem_size_bytes{{{label_selector}, mountpoint='/'}} - node_filesystem_avail_bytes{{{label_selector}, mountpoint='/'}}) / node_filesystem_size_bytes{{{label_selector}, mountpoint='/'}} * 100"
+            else:
+                disk_query = "(node_filesystem_size_bytes{mountpoint='/'} - node_filesystem_avail_bytes{mountpoint='/'}) / node_filesystem_size_bytes{mountpoint='/'} * 100"
+            
+            resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": disk_query}, timeout=PROMETHEUS_TIMEOUT)
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get('status') == 'success':
+                    results = result.get('data', {}).get('result', [])
+                    output += "Disk Usage (root filesystem):\n" + "-" * 80 + "\n"
+                    for item in results:
+                        job = item.get('metric', {}).get('job', '')
+                        instance = item.get('metric', {}).get('instance', 'unknown')
+                        display_name = f"{job} ({instance})" if job else instance
+                        value = item.get('value', [None, None])[1]
+                        output += f"  {display_name}: {float(value):.2f}%\n"
+            
+            # Get total disk capacity
+            if node_name:
+                disk_total_query = f"node_filesystem_size_bytes{{{label_selector}, mountpoint='/'}}"
+            else:
+                disk_total_query = "node_filesystem_size_bytes{mountpoint='/'}"
+            
+            resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": disk_total_query}, timeout=PROMETHEUS_TIMEOUT)
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get('status') == 'success':
+                    results = result.get('data', {}).get('result', [])
+                    output += "\nTotal Disk Capacity (root filesystem):\n" + "-" * 80 + "\n"
+                    for item in results:
+                        job = item.get('metric', {}).get('job', '')
+                        instance = item.get('metric', {}).get('instance', 'unknown')
+                        display_name = f"{job} ({instance})" if job else instance
+                        value_bytes = float(item.get('value', [None, None])[1])
+                        value_gb = value_bytes / (1024**3)
+                        output += f"  {display_name}: {value_gb:.2f} GB ({value_bytes:,.0f} bytes)\n"
+                    output += "\n"
+        
+        # Network metrics
+        if metric_type in ["network", "all"]:
+            # Network received (ingress)
+            if node_name:
+                net_rx_query = f"rate(node_network_receive_bytes_total{{{label_selector}, device!='lo'}}[5m])"
+            else:
+                net_rx_query = "rate(node_network_receive_bytes_total{device!='lo'}[5m])"
+            
+            resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": net_rx_query}, timeout=PROMETHEUS_TIMEOUT)
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get('status') == 'success':
+                    results = result.get('data', {}).get('result', [])
+                    output += "Network Receive Rate (bytes/sec):\n" + "-" * 80 + "\n"
+                    for item in results:
+                        job = item.get('metric', {}).get('job', '')
+                        instance = item.get('metric', {}).get('instance', 'unknown')
+                        device = item.get('metric', {}).get('device', 'unknown')
+                        display_name = f"{job} ({instance}) [{device}]" if job else f"{instance} [{device}]"
+                        value = item.get('value', [None, None])[1]
+                        value_mbps = float(value) * 8 / 1000000  # Convert to Mbps
+                        output += f"  {display_name}: {float(value):.2f} bytes/sec ({value_mbps:.4f} Mbps)\n"
+            
+            # Network transmitted (egress)
+            if node_name:
+                net_tx_query = f"rate(node_network_transmit_bytes_total{{{label_selector}, device!='lo'}}[5m])"
+            else:
+                net_tx_query = "rate(node_network_transmit_bytes_total{device!='lo'}[5m])"
+            
+            resp = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": net_tx_query}, timeout=PROMETHEUS_TIMEOUT)
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get('status') == 'success':
+                    results = result.get('data', {}).get('result', [])
+                    output += "\nNetwork Transmit Rate (bytes/sec):\n" + "-" * 80 + "\n"
+                    for item in results:
+                        job = item.get('metric', {}).get('job', '')
+                        instance = item.get('metric', {}).get('instance', 'unknown')
+                        device = item.get('metric', {}).get('device', 'unknown')
+                        display_name = f"{job} ({instance}) [{device}]" if job else f"{instance} [{device}]"
+                        value = item.get('value', [None, None])[1]
+                        value_mbps = float(value) * 8 / 1000000  # Convert to Mbps
+                        output += f"  {display_name}: {float(value):.2f} bytes/sec ({value_mbps:.4f} Mbps)\n"
                     output += "\n"
         
         return output

@@ -16,6 +16,7 @@ from .health_agent import ask_health_agent
 from .describe_agent import ask_describe_agent
 from .resources_agent import ask_resources_agent
 from .operations_agent import run_operations_agent
+from .monitor_agent import ask_monitor_agent
 
 # Load environment variables
 load_dotenv()
@@ -93,9 +94,9 @@ Query: "{user_question}"
 
 Categories:
 1. HEALTH - Node health status, node readiness, cluster-level events, control plane component health, cluster health check (NOT individual pod health/status)
-2. RESOURCES - CPU, memory, disk capacity, resource allocation, limits, requests, utilization, resource usage metrics
+2. RESOURCES - Quick resource snapshot using kubectl top (current CPU/memory only, no history)
 3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods
-4. MONITOR - Performance metrics, resource usage over time, trends
+4. MONITOR - Prometheus metrics, CPU/memory/disk trends, historical data, time-series analysis, resource usage over time
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
 6. OPERATIONS - Scaling deployments, updates, rollouts, restarts, maintenance, creating/deleting resources, applying YAML configs
 
@@ -107,13 +108,30 @@ HEALTH CATEGORY (node/cluster health, NOT resource usage):
 - "control plane health" → HEALTH
 - "cluster events" → HEALTH
 
-RESOURCES CATEGORY (CPU/memory/disk metrics and usage):
-- **"highest memory" or "most memory" or "which pod uses most memory"** → RESOURCES (ONLY)
-- **"which pod uses most CPU" or "largest CPU/memory"** → RESOURCES (ONLY)
-- **"find pod with highest/most resource"** → RESOURCES (ONLY)
-- "CPU/memory/disk capacity" → RESOURCES
-- "resource limits/requests/allocation" → RESOURCES
-- "resource usage/utilization" → RESOURCES
+RESOURCES CATEGORY (kubectl top - allocation/limits/requests only):
+- **"resource allocation" or "resource limits" or "resource requests"** → RESOURCES
+- **"kubectl top nodes/pods"** → RESOURCES (explicit kubectl top command only)
+- **"allocatable resources" or "capacity" or "resource quotas"** → RESOURCES
+- NOTE: For actual CPU/memory/disk usage metrics or percentages, use MONITOR instead
+
+MONITOR CATEGORY (Prometheus - metrics, trends, and monitoring):
+- **"CPU" or "memory" or "disk" (any mention of these resources)** → MONITOR (ONLY)
+- **"get node CPU" or "get memory" or "node memory"** → MONITOR (ONLY)
+- **"CPU and memory" or "CPU/memory metrics"** → MONITOR (ONLY)
+- **"show metrics" or "get metrics" or "node metrics" or "performance metrics"** → MONITOR (ONLY)
+- **"worker node metrics" or "master node metrics" or "metrics for worker/master"** → MONITOR (ONLY)
+- **"CPU, memory, disk" or "all metrics" or "comprehensive metrics"** → MONITOR (ONLY)
+- **"CPU trend" or "memory trend" or "show CPU last hour"** → MONITOR (ONLY)
+- **"CPU usage over time" or "historical metrics"** → MONITOR (ONLY)
+- **"highest memory" or "most memory" or "which pod uses most memory"** → MONITOR (ONLY)
+- **"which pod uses most CPU" or "largest CPU/memory"** → MONITOR (ONLY)
+- **"find pod with highest/most resource"** → MONITOR (ONLY)
+- **"disk usage" or "network traffic" or "network metrics"** → MONITOR (ONLY)
+- **"monitor nodes" or "node monitoring" or "cluster monitoring"** → MONITOR (ONLY)
+- **"percentage" or "%" (any percentage-based metrics)** → MONITOR (ONLY)
+- Any query asking for CPU/memory/disk/network usage → MONITOR
+- Any query asking for trends/history/time-series → MONITOR
+- Any query asking for actual resource consumption → MONITOR
 
 DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"list pods/services/deployments"** → DESCRIBE (ONLY)
@@ -123,6 +141,7 @@ DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE
 - **"pods failing" or "pods in error" or "crashed pods"** → DESCRIBE
 - **"which pods are running/pending/failed"** → DESCRIBE
+- NOTE: For metrics like CPU/memory usage, use MONITOR instead
 
 OPERATIONS CATEGORY (write operations):
 - **"scale deployment" or "scale to X replicas"** → OPERATIONS (ONLY)
@@ -142,19 +161,29 @@ OPERATIONS CATEGORY (write operations):
 MULTI-AGENT EXAMPLES:
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
 - "list nodes with their status" → DESCRIBE,HEALTH (parallel)
-- "node capacity AND health" → RESOURCES,HEALTH (parallel)
-- **"count pods AND highest memory AND cluster health"** → DESCRIBE,RESOURCES,HEALTH (all 3)
+- **"get node CPU and memory metrics"** → MONITOR (ONLY)
+- **"show node CPU and memory"** → MONITOR (ONLY)
+- **"node CPU usage"** → MONITOR (ONLY)
+- **"get memory metrics"** → MONITOR (ONLY)
+- **"show me CPU, memory, and disk for all nodes"** → MONITOR (ONLY)
+- **"get node metrics"** → MONITOR (ONLY)
+- **"show metrics for node X"** → MONITOR (ONLY)
+- **"performance metrics"** → MONITOR (ONLY)
+- **"count pods AND highest memory AND cluster health"** → DESCRIBE,MONITOR,HEALTH (all 3)
+- **"CPU trend last hour"** → MONITOR (ONLY)
+- **"which pod uses most memory"** → MONITOR (ONLY)
 - **"scale deployment AND check node health"** → OPERATIONS,HEALTH (parallel)
-- **"list deployments AND which pod uses most memory"** → DESCRIBE,RESOURCES (parallel)
-- **"scale to 4 replicas, check cluster health, list deployments, highest memory pod"** → OPERATIONS,HEALTH,DESCRIBE,RESOURCES (all 4)
+- **"list deployments AND which pod uses most memory"** → DESCRIBE,MONITOR (parallel)
 
 CRITICAL: Respond with ONLY comma-separated category names, nothing else.
 Examples:
 - "HEALTH"
 - "DESCRIBE"
-- "RESOURCES,HEALTH"
+- "MONITOR"
+- "RESOURCES"
+- "MONITOR,HEALTH"
 - "DESCRIBE,HEALTH"
-- "RESOURCES,HEALTH"
+- "MONITOR,HEALTH"
 - "OPERATIONS,HEALTH"
 - "OPERATIONS,DESCRIBE"
 
@@ -176,26 +205,37 @@ For each category, extract ALL relevant parts of the question:
 
 HEALTH category: Extract node health, cluster health, control plane health parts
 DESCRIBE category: Extract listing/counting/describing pods/services/deployments/namespaces parts, AND pod status/health parts (unhealthy pods, failing pods, pod errors)
-RESOURCES category: Extract resource/capacity/usage/limits/requests parts
+RESOURCES category: Extract kubectl top, current snapshot parts (no trends/history)
+MONITOR category: Extract CPU/memory trends, historical data, highest/most resource usage, time-series analysis parts
 OPERATIONS category: Extract scaling, deployment updates, rollouts, restarts, pod/namespace creation/deletion, YAML apply parts
 
 Format your response EXACTLY like this:
 HEALTH: <health sub-question or "N/A">
 DESCRIBE: <describe sub-question or "N/A">
 RESOURCES: <resources sub-question or "N/A">
+MONITOR: <monitor sub-question or "N/A">
 OPERATIONS: <operations sub-question or "N/A">
 
 Examples:
 Original: "check no of pods and find highest memory pod and check cluster health"
 HEALTH: check cluster health
 DESCRIBE: how many pods in the cluster
-RESOURCES: find pod with highest memory
+RESOURCES: N/A
+MONITOR: find pod with highest memory
+OPERATIONS: N/A
+
+Original: "what was the CPU trend in the last hour"
+HEALTH: N/A
+DESCRIBE: N/A
+RESOURCES: N/A
+MONITOR: CPU trend in the last hour
 OPERATIONS: N/A
 
 Original: "scale stress-tester to 5 replicas and check node health"
 HEALTH: check node health
 DESCRIBE: N/A
 RESOURCES: N/A
+MONITOR: N/A
 OPERATIONS: scale stress-tester deployment to 5 replicas
 
 Original: "create a configmap named test-config and list all pods"
@@ -243,6 +283,12 @@ Your response:"""
                 print(f"🔧 DEBUG: Resources Agent sub-question: '{resources_q}'")
             agents_to_run.append(("Resources Agent", lambda q=resources_q: ask_resources_agent(q, api_key=anthropic_api_key, verbose=verbose)))
         
+        if "MONITOR" in categories:
+            monitor_q = sub_questions.get('MONITOR', user_question)
+            if show_routing:
+                print(f"🔧 DEBUG: Monitor Agent sub-question: '{monitor_q}'")
+            agents_to_run.append(("Monitor Agent", lambda q=monitor_q: ask_monitor_agent(q, api_key=anthropic_api_key, verbose=verbose)))
+        
         if "OPERATIONS" in categories:
             operations_q = sub_questions.get('OPERATIONS', user_question)
             if show_routing:
@@ -251,8 +297,6 @@ Your response:"""
         
         # Check for unimplemented agents
         unimplemented = []
-        if "MONITOR" in categories:
-            unimplemented.append("Monitor Agent (performance metrics)")
         if "SECURITY" in categories:
             unimplemented.append("Security Agent (RBAC/security)")
         
@@ -267,7 +311,23 @@ Your response:"""
             agent_name, agent_func = agents_to_run[0]
             try:
                 result = agent_func()
-                answer = result.get('answer', f'No response from {agent_name}')
+                
+                # For Monitor Agent, prefer raw tool output over summary
+                if agent_name == "Monitor Agent" and 'messages' in result:
+                    # Extract ALL tool outputs from ToolMessages (may be multiple calls)
+                    tool_outputs = []
+                    for msg in result['messages']:
+                        if type(msg).__name__ == 'ToolMessage':
+                            tool_outputs.append(msg.content)
+                    
+                    # Use combined tool outputs if available, otherwise use answer
+                    if tool_outputs:
+                        answer = "\n\n".join(tool_outputs)
+                    else:
+                        answer = result.get('answer', f'No response from {agent_name}')
+                else:
+                    answer = result.get('answer', f'No response from {agent_name}')
+                
                 results.append(f"**{agent_name}:**\n{answer}")
             except Exception as e:
                 results.append(f"**{agent_name} Error:** {str(e)}")
@@ -289,7 +349,23 @@ Your response:"""
                     agent_name = future_to_agent[future]
                     try:
                         result = future.result()
-                        answer = result.get('answer', f'No response from {agent_name}')
+                        
+                        # For Monitor Agent, prefer raw tool output over summary
+                        if agent_name == "Monitor Agent" and 'messages' in result:
+                            # Extract ALL tool outputs from ToolMessages (may be multiple calls)
+                            tool_outputs = []
+                            for msg in result['messages']:
+                                if type(msg).__name__ == 'ToolMessage':
+                                    tool_outputs.append(msg.content)
+                            
+                            # Use combined tool outputs if available, otherwise use answer
+                            if tool_outputs:
+                                answer = "\n\n".join(tool_outputs)
+                            else:
+                                answer = result.get('answer', f'No response from {agent_name}')
+                        else:
+                            answer = result.get('answer', f'No response from {agent_name}')
+                        
                         results.append(f"**{agent_name}:**\n{answer}")
                     except Exception as e:
                         results.append(f"**{agent_name} Error:** {str(e)}")
