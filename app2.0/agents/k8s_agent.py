@@ -107,6 +107,8 @@ HEALTH CATEGORY (node/cluster health, NOT resource usage):
 - **"node health" or "node status" or "check nodes" or "node readiness"** → HEALTH
 - "control plane health" → HEALTH
 - "cluster events" → HEALTH
+- NOTE: For listing node names, use DESCRIBE instead
+- NOTE: For node metrics (CPU/memory), use MONITOR instead
 
 RESOURCES CATEGORY (kubectl top - allocation/limits/requests only):
 - **"resource allocation" or "resource limits" or "resource requests"** → RESOURCES
@@ -136,6 +138,8 @@ MONITOR CATEGORY (Prometheus - metrics, trends, and monitoring):
 DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"list pods/services/deployments"** → DESCRIBE (ONLY)
 - **"how many pods/services" or "count pods"** → DESCRIBE (ONLY)
+- **"list nodes" or "show nodes" or "node names" or "what are the nodes"** → DESCRIBE (ONLY)
+- **"names of nodes" or "which nodes" or "what nodes exist"** → DESCRIBE (ONLY)
 - "describe pod/service/deployment" → DESCRIBE
 - "what namespaces exist" → DESCRIBE
 - **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE
@@ -160,6 +164,9 @@ OPERATIONS CATEGORY (write operations):
 
 MULTI-AGENT EXAMPLES:
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
+- **"what are the names of nodes" or "list node names"** → DESCRIBE (ONLY)
+- **"what are the 2 nodes in cluster"** → DESCRIBE (ONLY)
+- **"node names" or "which nodes exist"** → DESCRIBE (ONLY)
 - "list nodes with their status" → DESCRIBE,HEALTH (parallel)
 - **"get node CPU and memory metrics"** → MONITOR (ONLY)
 - **"show node CPU and memory"** → MONITOR (ONLY)

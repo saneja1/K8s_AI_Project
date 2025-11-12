@@ -458,6 +458,151 @@ def get_pod_metrics(pod_name: str, namespace: Optional[str] = None, metric_type:
 
 
 @tool
+def get_top_pods_by_resource(resource_type: str, namespace: Optional[str] = None, top_n: int = 10) -> str:
+    """
+    Get top pods by resource usage (CPU, memory, disk, network).
+    Perfect for finding which pod uses the most of any resource.
+    
+    Args:
+        resource_type: Type of resource to sort by:
+            - "memory": Memory usage in bytes
+            - "cpu": CPU usage percentage
+            - "disk": Disk usage (filesystem)
+            - "network_receive": Network receive bytes/sec
+            - "network_transmit": Network transmit bytes/sec
+        namespace: Kubernetes namespace to filter (optional, searches all namespaces if not provided)
+        top_n: Number of top pods to return (default: 10)
+    
+    Returns:
+        Formatted string with pod resource usage, sorted from highest to lowest
+    
+    Examples:
+        - get_top_pods_by_resource("memory") → Find pods using most memory
+        - get_top_pods_by_resource("cpu", namespace="default") → Find pods using most CPU in default namespace
+        - get_top_pods_by_resource("network_receive", top_n=5) → Find top 5 pods by network traffic
+    """
+    try:
+        # Build PromQL query based on resource type
+        resource_queries = {
+            "memory": "container_memory_usage_bytes{container!=''}",
+            "cpu": "rate(container_cpu_usage_seconds_total{container!=''}[5m]) * 100",
+            "disk": "container_fs_usage_bytes{container!=''}",
+            "network_receive": "rate(container_network_receive_bytes_total{pod!=''}[5m])",
+            "network_transmit": "rate(container_network_transmit_bytes_total{pod!=''}[5m])"
+        }
+        
+        if resource_type not in resource_queries:
+            return f"Invalid resource_type: '{resource_type}'. Valid options: {', '.join(resource_queries.keys())}"
+        
+        base_query = resource_queries[resource_type]
+        
+        # Add namespace filter if specified
+        if namespace:
+            # Insert namespace filter into the query
+            base_query = base_query.replace("{", f"{{namespace='{namespace}', ")
+        
+        # Wrap in sort_desc to get highest values first
+        query = f"sort_desc({base_query})"
+        
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": query},
+            timeout=PROMETHEUS_TIMEOUT
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if result.get('status') != 'success':
+            return f"Query failed: {result.get('error', 'Unknown error')}"
+        
+        results = result.get('data', {}).get('result', [])
+        
+        if not results:
+            return f"No pod {resource_type} data available" + (f" in namespace '{namespace}'" if namespace else "")
+        
+        # Format output based on resource type
+        resource_titles = {
+            "memory": "Memory Usage",
+            "cpu": "CPU Usage",
+            "disk": "Disk Usage",
+            "network_receive": "Network Receive Rate",
+            "network_transmit": "Network Transmit Rate"
+        }
+        
+        output = f"Top Pods by {resource_titles[resource_type]} (Top {min(top_n, len(results))})\n"
+        output += "=" * 80 + "\n"
+        if namespace:
+            output += f"Namespace: {namespace}\n"
+        else:
+            output += "All Namespaces\n"
+        output += f"Total pods/containers found: {len(results)}\n\n"
+        
+        output += f"Sorted by {resource_type} (highest to lowest):\n"
+        output += "-" * 80 + "\n"
+        
+        for idx, item in enumerate(results[:top_n], 1):
+            metric = item.get('metric', {})
+            pod = metric.get('pod', 'unknown')
+            container = metric.get('container', 'unknown')
+            ns = metric.get('namespace', 'unknown')
+            node = metric.get('node', 'unknown')
+            value = item.get('value', [None, None])[1]
+            
+            output += f"{idx}. Pod: {pod}\n"
+            output += f"   Container: {container}\n"
+            output += f"   Namespace: {ns}\n"
+            output += f"   Node: {node}\n"
+            
+            # Format value based on resource type
+            if resource_type == "memory":
+                mem_bytes = float(value)
+                mem_mb = mem_bytes / (1024 * 1024)
+                mem_gb = mem_bytes / (1024 * 1024 * 1024)
+                if mem_gb >= 1:
+                    output += f"   Memory: {mem_gb:.2f} GB ({mem_mb:.2f} MB)\n"
+                else:
+                    output += f"   Memory: {mem_mb:.2f} MB\n"
+            
+            elif resource_type == "cpu":
+                cpu_percent = float(value)
+                output += f"   CPU: {cpu_percent:.4f}%\n"
+            
+            elif resource_type == "disk":
+                disk_bytes = float(value)
+                disk_mb = disk_bytes / (1024 * 1024)
+                disk_gb = disk_bytes / (1024 * 1024 * 1024)
+                if disk_gb >= 1:
+                    output += f"   Disk: {disk_gb:.2f} GB ({disk_mb:.2f} MB)\n"
+                else:
+                    output += f"   Disk: {disk_mb:.2f} MB\n"
+            
+            elif resource_type in ["network_receive", "network_transmit"]:
+                bytes_per_sec = float(value)
+                kb_per_sec = bytes_per_sec / 1024
+                mb_per_sec = bytes_per_sec / (1024 * 1024)
+                mbps = bytes_per_sec * 8 / 1000000  # Convert to Megabits per second
+                
+                direction = "Receive" if resource_type == "network_receive" else "Transmit"
+                if mb_per_sec >= 1:
+                    output += f"   Network {direction}: {mb_per_sec:.2f} MB/s ({mbps:.2f} Mbps)\n"
+                else:
+                    output += f"   Network {direction}: {kb_per_sec:.2f} KB/s ({mbps:.4f} Mbps)\n"
+            
+            output += "\n"
+        
+        if len(results) > top_n:
+            output += f"... and {len(results) - top_n} more pods with lower {resource_type} usage\n"
+        
+        return output
+        
+    except requests.exceptions.RequestException as e:
+        return f"Error connecting to Prometheus at {PROMETHEUS_URL}: {str(e)}"
+    except Exception as e:
+        return f"Error retrieving pod {resource_type} data: {str(e)}"
+
+
+@tool
 def list_available_metrics(search: Optional[str] = None) -> str:
     """
     List all available metrics in Prometheus.

@@ -413,6 +413,123 @@ def get_pod_metrics(pod_name: str, namespace: str = "", metric_type: str = "all"
 
 
 @mcp.tool()
+def get_top_pods_by_resource(resource_type: str, namespace: str = "", top_n: int = 10) -> str:
+    """
+    Get top pods by resource usage - finds which pods use the most CPU, memory, disk, or network.
+    
+    Args:
+        resource_type: Type of resource - "memory", "cpu", "disk", "network_receive", or "network_transmit"
+        namespace: Kubernetes namespace filter (empty for all namespaces)
+        top_n: Number of top pods to return (default: 10)
+    
+    Returns:
+        Formatted list of top pods sorted by resource usage (highest first)
+    
+    Examples:
+        - get_top_pods_by_resource("memory") → Find which pod uses most memory
+        - get_top_pods_by_resource("cpu", namespace="default", top_n=5) → Top 5 CPU users in default namespace
+    """
+    try:
+        # Build PromQL query based on resource type
+        resource_queries = {
+            "memory": "container_memory_usage_bytes{container!=''}",
+            "cpu": "rate(container_cpu_usage_seconds_total{container!=''}[5m]) * 100",
+            "disk": "container_fs_usage_bytes{container!=''}",
+            "network_receive": "rate(container_network_receive_bytes_total{pod!=''}[5m])",
+            "network_transmit": "rate(container_network_transmit_bytes_total{pod!=''}[5m])"
+        }
+        
+        if resource_type not in resource_queries:
+            return f"Invalid resource_type: '{resource_type}'. Valid options: {', '.join(resource_queries.keys())}"
+        
+        base_query = resource_queries[resource_type]
+        
+        # Add namespace filter if specified
+        if namespace:
+            base_query = base_query.replace("{", f"{{namespace='{namespace}', ")
+        
+        # Wrap in sort_desc to get highest values first
+        query = f"sort_desc({base_query})"
+        
+        response = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": query},
+            timeout=PROMETHEUS_TIMEOUT
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if result.get('status') != 'success':
+            return f"Query failed: {result.get('error', 'Unknown error')}"
+        
+        results = result.get('data', {}).get('result', [])
+        
+        if not results:
+            ns_msg = f" in namespace '{namespace}'" if namespace else ""
+            return f"No pod {resource_type} data available{ns_msg}"
+        
+        # Format output
+        resource_titles = {
+            "memory": "Memory Usage",
+            "cpu": "CPU Usage",
+            "disk": "Disk Usage",
+            "network_receive": "Network Receive Rate",
+            "network_transmit": "Network Transmit Rate"
+        }
+        
+        output = f"Top Pods by {resource_titles[resource_type]} (Top {min(top_n, len(results))})\n"
+        output += "=" * 80 + "\n"
+        output += f"Namespace: {namespace if namespace else 'All Namespaces'}\n"
+        output += f"Total pods/containers found: {len(results)}\n\n"
+        output += f"Sorted by {resource_type} (highest to lowest):\n" + "-" * 80 + "\n"
+        
+        for idx, item in enumerate(results[:top_n], 1):
+            metric = item.get('metric', {})
+            pod = metric.get('pod', 'unknown')
+            container = metric.get('container', 'unknown')
+            ns = metric.get('namespace', 'unknown')
+            node = metric.get('node', 'unknown')
+            value = float(item.get('value', [None, None])[1])
+            
+            output += f"{idx}. Pod: {pod}\n"
+            output += f"   Container: {container}\n"
+            output += f"   Namespace: {ns}\n"
+            output += f"   Node: {node}\n"
+            
+            # Format value based on resource type
+            if resource_type == "memory":
+                mem_mb = value / (1024 * 1024)
+                mem_gb = value / (1024 * 1024 * 1024)
+                output += f"   Memory: {mem_gb:.2f} GB ({mem_mb:.2f} MB)\n" if mem_gb >= 1 else f"   Memory: {mem_mb:.2f} MB\n"
+            
+            elif resource_type == "cpu":
+                output += f"   CPU: {value:.4f}%\n"
+            
+            elif resource_type == "disk":
+                disk_mb = value / (1024 * 1024)
+                disk_gb = value / (1024 * 1024 * 1024)
+                output += f"   Disk: {disk_gb:.2f} GB ({disk_mb:.2f} MB)\n" if disk_gb >= 1 else f"   Disk: {disk_mb:.2f} MB\n"
+            
+            elif resource_type in ["network_receive", "network_transmit"]:
+                kb_per_sec = value / 1024
+                mb_per_sec = value / (1024 * 1024)
+                mbps = value * 8 / 1000000
+                direction = "Receive" if resource_type == "network_receive" else "Transmit"
+                output += f"   Network {direction}: {mb_per_sec:.2f} MB/s ({mbps:.2f} Mbps)\n" if mb_per_sec >= 1 else f"   Network {direction}: {kb_per_sec:.2f} KB/s ({mbps:.4f} Mbps)\n"
+            
+            output += "\n"
+        
+        if len(results) > top_n:
+            output += f"... and {len(results) - top_n} more pods with lower {resource_type} usage\n"
+        
+        return output
+        
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+@mcp.tool()
 def list_available_metrics(search: str = "") -> str:
     """
     List available metrics in Prometheus.

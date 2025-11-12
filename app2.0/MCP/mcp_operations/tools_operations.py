@@ -322,6 +322,44 @@ def delete_pods_by_label(label_selector: str, namespace: str = "all", force: boo
 
 
 
+def delete_deployment(name: str, namespace: str = "default", force: bool = False) -> str:
+    """
+    Delete a Kubernetes deployment and all its pods.
+    ⚠️ WARNING: This will delete the deployment and all its managed pods!
+    
+    Args:
+        name: Deployment name to delete
+        namespace: Namespace (default: "default")
+        force: If True, force delete immediately (hard delete)
+    
+    Returns:
+        String with operation result
+    """
+    try:
+        # Safety check for system deployments
+        if namespace in ['kube-system', 'kube-public', 'kube-node-lease']:
+            return f"⚠️ SAFETY CHECK: Deleting deployments in system namespace '{namespace}' requires extra caution. Please confirm this action."
+        
+        force_flag = "--force --grace-period=0" if force else "--grace-period=30"
+        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete deployment {name} -n {namespace} {force_flag}"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a",
+            f"--command={full_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        
+        if result.returncode == 0:
+            delete_type = "FORCE" if force else "GRACEFUL"
+            return f"[{delete_type}] Successfully deleted deployment '{name}' in namespace '{namespace}' and all its pods.\n\n{result.stdout}"
+        else:
+            return f"Error deleting deployment: {result.stderr}"
+    except Exception as e:
+        return f"Error executing command: {str(e)}"
+
+
+
 def cordon_node(node_name: str) -> str:
     """
     Mark a node as unschedulable (cordon). Prevents new pods from being scheduled on this node.

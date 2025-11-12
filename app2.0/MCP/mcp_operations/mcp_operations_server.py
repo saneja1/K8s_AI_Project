@@ -14,6 +14,7 @@ from tools_operations import (
     delete_pod,
     delete_pods_by_status,
     delete_pods_by_label,
+    delete_deployment,
     cordon_node,
     uncordon_node,
     drain_node,
@@ -64,6 +65,11 @@ def delete_pods_by_status_tool(status: str, namespace: str = "all", force: bool 
 def delete_pods_by_label_tool(label_selector: str, namespace: str = "all", force: bool = False) -> str:
     """Delete all pods matching a label selector."""
     return delete_pods_by_label(label_selector, namespace, force)
+
+@mcp.tool()
+def delete_deployment_tool(name: str, namespace: str = "default", force: bool = False) -> str:
+    """Delete a Kubernetes deployment and all its pods."""
+    return delete_deployment(name, namespace, force)
 
 @mcp.tool()
 def cordon_node_tool(node_name: str) -> str:
