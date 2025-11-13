@@ -25,7 +25,7 @@ async def _get_mcp_tools():
         {
             "k8s_describe": {
                 "transport": "streamable_http",
-                "url": "http://127.0.0.1:8001/mcp"
+                "url": "http://127.0.0.1:8002/mcp"
             }
         }
     )
@@ -62,7 +62,17 @@ def create_describe_agent(api_key: str = None, verbose: bool = False):
     )
     
     # Get tools from MCP server (this is async, so we need to handle it)
-    tools = asyncio.run(_get_mcp_tools())
+    # Check if event loop is already running
+    try:
+        loop = asyncio.get_running_loop()
+        # Event loop is running - we can't use asyncio.run()
+        # This happens when called from async context
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            tools = pool.submit(lambda: asyncio.run(_get_mcp_tools())).result()
+    except RuntimeError:
+        # No event loop running - safe to use asyncio.run()
+        tools = asyncio.run(_get_mcp_tools())
     
     # Bind tools to model
     model_with_tools = model.bind_tools(tools)
@@ -80,8 +90,10 @@ def create_describe_agent(api_key: str = None, verbose: bool = False):
 YOUR RESPONSIBILITY:
 List, describe, count, and provide information about ANY Kubernetes resources.
 You handle WHAT EXISTS in the cluster, not health status or resource usage.
+You also provide pod logs for troubleshooting.
+You can show node taints (scheduling restrictions) as part of node descriptions.
 
-AVAILABLE TOOLS (5 GENERIC TOOLS):
+AVAILABLE TOOLS (6 GENERIC TOOLS):
 
 1. list_k8s_resources(resource_type, namespace='all')
    - List ANY K8s resource type
@@ -93,6 +105,7 @@ AVAILABLE TOOLS (5 GENERIC TOOLS):
    - Get detailed info about ANY specific resource
    - Works with ANY resource type (pod, service, deployment, node, etc.)
    - Auto-matches partial pod names
+   - For NODES: includes Taints, Labels, Annotations, Conditions, Capacity, Allocatable, etc.
 
 3. count_k8s_resources(resource_type, namespace='all', filter_by=None, filter_value=None)
    - Count ANY resources with optional filtering
@@ -107,6 +120,12 @@ AVAILABLE TOOLS (5 GENERIC TOOLS):
    - Get YAML definition of ANY resource
    - Useful for inspecting configurations, labels, annotations
 
+6. get_pod_logs(pod_name, namespace='default', container='', tail=100, previous=False)
+   - Get logs from a pod for debugging/troubleshooting
+   - container: specify if pod has multiple containers
+   - tail: number of recent lines (default 100)
+   - previous: get logs from previous crashed container
+
 TOOL SELECTION GUIDE:
 
 "List all X" → list_k8s_resources('X', 'all')
@@ -114,6 +133,11 @@ TOOL SELECTION GUIDE:
 
 "Describe X named Y" → describe_k8s_resource('X', 'Y', namespace)
   Examples: "describe pod nginx", "describe node k8s-master-001"
+
+"What taints on node X" → describe_k8s_resource('node', 'X')
+  - Look for "Taints:" line in output
+  - If "Taints: <none>" → Say "Taints: <none>" or "No taints"
+  - If taints present → Show COMPLETE taint string exactly: "Taints: node.kubernetes.io/unschedulable:NoSchedule"
 
 "How many X" → count_k8s_resources('X', ...)
   Examples: "how many pods", "count services in default", "how many pods on node-1"
@@ -123,6 +147,9 @@ TOOL SELECTION GUIDE:
 
 "Get YAML of X" → get_resource_yaml('X', 'name', namespace)
   Example: "show me the yaml for service kubernetes"
+
+"Show logs for pod X" → get_pod_logs('X', namespace, tail=100)
+  Examples: "show me logs for coredns pod", "last 50 lines of nginx pod logs"
 
 COUNTING BEST PRACTICES:
 - ALWAYS use count_k8s_resources, NEVER manually count tool output
@@ -147,6 +174,7 @@ RESPONSE RULES:
 - If asked about resource USAGE/CAPACITY (CPU/memory) → say "Resources Agent handles that"
 - For large outputs (>50 items), show all names in a compact list
 - Always use the generic tools, not specific ones
+- **For TAINTS questions**: Extract and show ONLY the "Taints:" line from describe output. Answer concisely - just report the taints, no explanation unless asked. CRITICAL: Show the COMPLETE taint string exactly as it appears (e.g., "node.kubernetes.io/unschedulable:NoSchedule"), do NOT truncate or summarize.
 
 RAW OUTPUT RULES:
 - If user asks for "raw yaml", "yaml definition", "yaml output", or "show yaml":
@@ -160,6 +188,12 @@ EXAMPLES:
 User: "list all pods"
 → list_k8s_resources('pods', 'all')
 → Show ALL pod names with namespace and status
+
+User: "what taints are on k8s-master-001"
+→ describe_k8s_resource('node', 'k8s-master-001', 'default')
+→ Find "Taints:" line in output
+→ Answer with JUST the complete taint line: "Taints: <none>" (do NOT add explanations)
+→ If taints exist, show FULL taint string: "Taints: node.kubernetes.io/unschedulable:NoSchedule"
 
 User: "what are running pods in cluster"
 → list_k8s_resources('pods', 'all')
@@ -257,8 +291,18 @@ User: "what's deployed in kube-system"
             
             return tool_results
         
-        # Run async execution
-        tool_results = asyncio.run(execute_tools_async())
+        # Run async execution - handle both cases (event loop running or not)
+        try:
+            loop = asyncio.get_running_loop()
+            # Event loop is running - we can't use asyncio.run()
+            # Use run_in_executor to run in a separate thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                tool_results = pool.submit(lambda: asyncio.run(execute_tools_async())).result()
+        except RuntimeError:
+            # No event loop running - safe to use asyncio.run()
+            tool_results = asyncio.run(execute_tools_async())
+        
         return {"messages": tool_results}
     
     # Build LangGraph workflow

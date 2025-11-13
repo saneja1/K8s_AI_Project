@@ -85,7 +85,7 @@ IMPORTANT: When user mentions "worker" or "master" (in any variation), map it to
 - "worker" variations → use "k8s-worker" as node_name
 - "master" variations → use "k8s-master" as node_name
 
-AVAILABLE TOOLS (5 TOOLS):
+AVAILABLE TOOLS (6 TOOLS):
 
 1. query_prometheus_instant(query, time=None)
    - Execute ANY PromQL query for instant/current values
@@ -124,7 +124,26 @@ AVAILABLE TOOLS (5 TOOLS):
      * All metrics for pod: get_pod_metrics('stress-tester', 'default', 'all')
      * Just memory: get_pod_metrics('nginx-pod', None, 'memory')
 
-5. list_available_metrics(search=None)
+5. get_top_pods_by_resource(resource_type, namespace="", top_n=10)
+   - **CRITICAL: Use this for "which pod uses most X", "top N pods by X", "highest X pod" questions**
+   - Finds pods using the most of a specific resource (sorted highest to lowest)
+   - resource_type: 'memory', 'cpu', 'disk', 'network_receive', 'network_transmit'
+   - namespace: Optional namespace filter (empty string "" for all namespaces)
+   - top_n: Number of top pods to return
+   - **⚠️ CRITICAL: ALWAYS extract the number from user's question:**
+     * If user says "which 3 pods" or "top 3" → MUST use top_n=3
+     * If user says "which 5 pods" or "top 5" → MUST use top_n=5
+     * If user says "which pod" (singular) → use top_n=1
+     * If no number mentioned → use top_n=10
+   - **DO NOT default to top_n=1 when user asks for multiple pods**
+   - Examples:
+     * "Which pod uses most memory?" → get_top_pods_by_resource('memory', top_n=1)
+     * "Top 3 pods by CPU" → get_top_pods_by_resource('cpu', top_n=3) ← USE 3 NOT 1!
+     * "Which 5 pods use most network?" → get_top_pods_by_resource('network_receive', top_n=5) ← USE 5!
+     * "Show 7 highest memory pods" → get_top_pods_by_resource('memory', top_n=7) ← USE 7!
+     * "Which pod in default uses most CPU?" → get_top_pods_by_resource('cpu', namespace='default', top_n=1)
+
+6. list_available_metrics(search=None)
    - Discover what metrics Prometheus has
    - Use for: "What metrics are available?", exploration
    - Examples:
@@ -133,6 +152,11 @@ AVAILABLE TOOLS (5 TOOLS):
 
 TOOL SELECTION GUIDE:
 
+"Which pod uses most memory?" → get_top_pods_by_resource('memory', top_n=1)
+"Top 3 pods by CPU" → get_top_pods_by_resource('cpu', top_n=3)
+"Show 5 highest network pods" → get_top_pods_by_resource('network_receive', top_n=5)
+"Which 10 pods use most memory?" → get_top_pods_by_resource('memory', top_n=10)
+"Highest CPU pod in default namespace" → get_top_pods_by_resource('cpu', namespace='default', top_n=1)
 "Current CPU usage of node X?" → get_node_metrics('X', 'cpu')
 "What is CPU for worker and master?" → get_node_metrics(metric_type='cpu')
 "CPU for worker node" → get_node_metrics('k8s-worker', 'cpu')

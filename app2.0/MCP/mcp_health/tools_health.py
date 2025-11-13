@@ -62,21 +62,22 @@ def get_cluster_nodes() -> str:
 def describe_node(node_name: str = "all") -> str:
     """
     Get detailed node conditions including Ready, MemoryPressure, DiskPressure, PIDPressure status.
+    Also includes lastTransitionTime for Ready condition (indicates when node was last restarted/became ready).
     Args:
         node_name: Name of the node to describe (default: "all" for all nodes)
     Returns:
-        String with node conditions showing health status
+        String with node conditions showing health status and last transition times
     """
     cache_key = f"describe_node_{node_name}"
     
     def _execute():
         try:
             if node_name == "all":
-                # Get conditions for all nodes using jsonpath
-                full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\\n\"}{range .status.conditions[*]}{\"  \"}{.type}{\" = \"}{.status}{\" (Reason: \"}{.reason}{\" | Message: \"}{.message}{\")\"}  {\"\\n\"}{end}{\"\\n\"}{end}'"
+                # Get conditions for all nodes with lastTransitionTime - simpler format
+                full_command = """sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o json | jq -r '.items[] | "\\(.metadata.name):", (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             else:
-                # Get conditions for specific node
-                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o jsonpath='{{.metadata.name}}{{\"\\n\"}}{{range .status.conditions[*]}}{{\"  \"}}{{.type}}{{\" = \"}}{{.status}}{{\" (Reason: \"}}{{.reason}}{{\" | Message: \"}}{{.message}}{{\")\"}}{{\"\n\"}}{{end}}'"
+                # Get conditions for specific node with lastTransitionTime - simpler format
+                full_command = f"""sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o json | jq -r '"\\(.metadata.name):", (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             
             result = subprocess.run([
                 "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",

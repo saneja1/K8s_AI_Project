@@ -56,17 +56,19 @@ def get_cluster_nodes() -> str:
 
 @mcp.tool()
 def describe_node(node_name: str = "all") -> str:
-    """Get detailed node conditions including Ready, MemoryPressure, DiskPressure, PIDPressure status."""
+    """Get detailed node conditions including Ready, MemoryPressure, DiskPressure, PIDPressure status.
+    Also shows lastTransitionTime for each condition (indicates when node was last restarted/became ready).
+    Includes node taints information."""
     cache_key = f"describe_node_{node_name}"
     
     def _execute():
         try:
             if node_name == "all":
-                full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{\"\\n\"}{range .status.conditions[*]}{\"  \"}{.type}{\" = \"}{.status}{\" (Reason: \"}{.reason}{\" | Message: \"}{.message}{\")\"}  {\"\\n\"}{end}{\"\\n\"}{end}'"
+                # Get all nodes with lastTransitionTime and taints using jq
+                full_command = """sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o json | jq -r '.items[] | "\\(.metadata.name):", "Taints: " + (if (.spec.taints | length) > 0 then (.spec.taints | map("\\(.key)=\\(.value):\\(.effect)") | join(", ")) else "<none>" end), (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             else:
-                # For specific nodes, use a simpler approach with json output and parse it
-                # This avoids jsonpath escaping issues with node names containing dots
-                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o json"
+                # Get specific node with lastTransitionTime and taints using jq
+                full_command = f"""sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o json | jq -r '"\\(.metadata.name):", "Taints: " + (if (.spec.taints | length) > 0 then (.spec.taints | map("\\(.key)=\\(.value):\\(.effect)") | join(", ")) else "<none>" end), (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             
             result = subprocess.run([
                 "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
@@ -76,27 +78,7 @@ def describe_node(node_name: str = "all") -> str:
             ], capture_output=True, text=True, timeout=8)
             
             if result.returncode == 0:
-                if node_name == "all":
-                    return result.stdout if result.stdout.strip() else "No node conditions found"
-                else:
-                    # Parse JSON output for specific node
-                    import json
-                    try:
-                        node_data = json.loads(result.stdout)
-                        node_name_full = node_data.get('metadata', {}).get('name', node_name)
-                        conditions = node_data.get('status', {}).get('conditions', [])
-                        
-                        output = f"{node_name_full}\n"
-                        for condition in conditions:
-                            ctype = condition.get('type', 'Unknown')
-                            status = condition.get('status', 'Unknown')
-                            reason = condition.get('reason', 'Unknown')
-                            message = condition.get('message', 'No message')
-                            output += f"  {ctype} = {status} (Reason: {reason} | Message: {message})\n"
-                        
-                        return output.strip()
-                    except json.JSONDecodeError:
-                        return result.stdout if result.stdout.strip() else "No node conditions found"
+                return result.stdout if result.stdout.strip() else "No node conditions found"
             else:
                 return f"Error: {result.stderr}"
         except Exception as e:

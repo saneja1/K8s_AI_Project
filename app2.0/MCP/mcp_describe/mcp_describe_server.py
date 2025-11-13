@@ -317,6 +317,46 @@ def get_resource_yaml(resource_type: str, resource_name: str, namespace: str = "
         return f"Error executing command: {str(e)}"
 
 
+@mcp.tool()
+def get_pod_logs(pod_name: str, namespace: str = "default", container: str = "", tail: int = 100, previous: bool = False) -> str:
+    """
+    Get logs from a pod (useful for debugging and troubleshooting).
+    
+    Args:
+        pod_name: Name of the pod
+        namespace: Namespace of the pod (default: "default")
+        container: Specific container name (optional, if pod has multiple containers)
+        tail: Number of recent log lines to show (default: 100)
+        previous: Get logs from previous container instance if it crashed (default: False)
+    
+    Returns:
+        String with pod logs
+    """
+    try:
+        # Build command
+        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs {pod_name} -n {namespace} --tail={tail}"
+        
+        if container:
+            full_command += f" -c {container}"
+        
+        if previous:
+            full_command += " --previous"
+        
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
+            "--zone=us-central1-a",
+            f"--command={full_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15)  # Longer timeout for logs
+        
+        if result.returncode == 0:
+            return result.stdout if result.stdout.strip() else "No logs found or pod has no output yet"
+        else:
+            return f"Error: {result.stderr}"
+    except Exception as e:
+        return f"Error executing command: {str(e)}"
+
+
 if __name__ == "__main__":
     # Run server on HTTP transport
     # Port should be set via PORT environment variable when launching this script

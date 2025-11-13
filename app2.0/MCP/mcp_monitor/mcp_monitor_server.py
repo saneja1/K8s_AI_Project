@@ -481,7 +481,7 @@ def get_top_pods_by_resource(resource_type: str, namespace: str = "", top_n: int
         output = f"Top Pods by {resource_titles[resource_type]} (Top {min(top_n, len(results))})\n"
         output += "=" * 80 + "\n"
         output += f"Namespace: {namespace if namespace else 'All Namespaces'}\n"
-        output += f"Total pods/containers found: {len(results)}\n\n"
+        output += f"Total containers found: {len(results)}\n\n"
         output += f"Sorted by {resource_type} (highest to lowest):\n" + "-" * 80 + "\n"
         
         for idx, item in enumerate(results[:top_n], 1):

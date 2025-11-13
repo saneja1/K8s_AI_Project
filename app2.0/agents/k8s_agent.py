@@ -21,6 +21,23 @@ from .monitor_agent import ask_monitor_agent
 # Load environment variables
 load_dotenv()
 
+# ============================================================================
+# CONVERSATION STATE MANAGEMENT
+# ============================================================================
+
+# Global conversation state (persists across calls)
+_conversation_state = {"messages": []}
+
+def get_conversation_state():
+    """Get the current conversation state"""
+    return _conversation_state
+
+def reset_conversation():
+    """Reset the conversation history"""
+    global _conversation_state
+    _conversation_state = {"messages": []}
+    return "Conversation history cleared."
+
 
 # ============================================================================
 # KUBERNETES SUPERVISOR AGENT (LangGraph Manual Build - New Version)
@@ -87,6 +104,49 @@ def create_k8s_supervisor_agent(api_key: str = None, verbose: bool = False):
         if not user_question:
             return {"messages": [AIMessage(content="I didn't receive a question. Please ask me about your Kubernetes cluster.")]}
         
+        # Check if this is a greeting or non-K8s question
+        greeting_check_prompt = f"""Is this a Kubernetes-related question, a greeting, casual conversation, or a meta-question about our conversation?
+
+Question: "{user_question}"
+
+Respond with ONLY one word:
+- "K8S" if it's about Kubernetes (pods, nodes, deployments, metrics, health, resources, etc.)
+- "GREETING" if it's a greeting (hi, hello, hey, good morning, etc.)
+- "META" if asking about conversation history (last questions, previous queries, what did I ask, etc.)
+- "CASUAL" if it's casual conversation or non-K8s question
+
+Your response (one word only):"""
+        
+        check_response = model.invoke([HumanMessage(content=greeting_check_prompt)])
+        question_type = check_response.content.strip().upper()
+        
+        # Handle greetings and casual conversation
+        if question_type == "GREETING":
+            return {"messages": [AIMessage(content="Hello! I'm your Kubernetes cluster assistant. I can help you with:\n\n• Cluster health and node status\n• Resource listings (pods, services, deployments)\n• Performance metrics and monitoring\n• Operations like scaling and updates\n\nWhat would you like to know about your cluster?")]}
+        
+        if question_type == "META":
+            # Extract user's previous questions from conversation history
+            previous_questions = []
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    previous_questions.append(msg.content)
+            
+            if len(previous_questions) <= 1:
+                return {"messages": [AIMessage(content="This is your first question in this conversation session.")]}
+            
+            # Get last 5 questions (excluding current one)
+            recent_questions = previous_questions[-6:-1] if len(previous_questions) > 5 else previous_questions[:-1]
+            recent_questions.reverse()  # Most recent first
+            
+            response_text = f"Here are your last {len(recent_questions)} question(s):\n\n"
+            for i, q in enumerate(recent_questions, 1):
+                response_text += f"{i}. {q}\n"
+            
+            return {"messages": [AIMessage(content=response_text)]}
+        
+        if question_type == "CASUAL":
+            return {"messages": [AIMessage(content="I'm a specialized Kubernetes assistant. I can help you monitor and manage your K8s cluster. Would you like to ask about your cluster's health, resources, metrics, or operations?")]}
+        
         # Routing logic: Classify which agent(s) should handle this query
         routing_prompt = f"""Classify this Kubernetes query into ONE OR MORE categories (can select multiple):
 
@@ -140,6 +200,7 @@ DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"how many pods/services" or "count pods"** → DESCRIBE (ONLY)
 - **"list nodes" or "show nodes" or "node names" or "what are the nodes"** → DESCRIBE (ONLY)
 - **"names of nodes" or "which nodes" or "what nodes exist"** → DESCRIBE (ONLY)
+- **"taints" or "what taints" or "node taints" or "show taints"** → DESCRIBE (ONLY)
 - "describe pod/service/deployment" → DESCRIBE
 - "what namespaces exist" → DESCRIBE
 - **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE
@@ -211,10 +272,10 @@ Categories detected: {categories_str}
 For each category, extract ALL relevant parts of the question:
 
 HEALTH category: Extract node health, cluster health, control plane health parts
-DESCRIBE category: Extract listing/counting/describing pods/services/deployments/namespaces parts, AND pod status/health parts (unhealthy pods, failing pods, pod errors)
+DESCRIBE category: Extract listing/counting/describing pods/services/deployments/namespaces parts, pod status/health parts (unhealthy pods, failing pods, pod errors), AND node taints/labels/annotations
 RESOURCES category: Extract kubectl top, current snapshot parts (no trends/history)
-MONITOR category: Extract CPU/memory trends, historical data, highest/most resource usage, time-series analysis parts
-OPERATIONS category: Extract scaling, deployment updates, rollouts, restarts, pod/namespace creation/deletion, YAML apply parts
+MONITOR category: Extract CPU/memory trends, historical data, highest/most resource usage, time-series analysis parts. **CRITICAL: Preserve ALL numbers (top 3, top 5, etc.) in the sub-question**
+OPERATIONS category: Extract scaling, deployment updates, rollouts, restarts, pod/namespace creation/deletion, YAML apply parts. **CRITICAL: Preserve ALL numbers (scale to 3, 5 replicas, etc.)**
 
 Format your response EXACTLY like this:
 HEALTH: <health sub-question or "N/A">
@@ -229,6 +290,27 @@ HEALTH: check cluster health
 DESCRIBE: how many pods in the cluster
 RESOURCES: N/A
 MONITOR: find pod with highest memory
+OPERATIONS: N/A
+
+Original: "what taints are on k8s-master-001"
+HEALTH: N/A
+DESCRIBE: what taints are on node k8s-master-001
+RESOURCES: N/A
+MONITOR: N/A
+OPERATIONS: N/A
+
+Original: "which 3 pods have the highest CPU usage"
+HEALTH: N/A
+DESCRIBE: N/A
+RESOURCES: N/A
+MONITOR: which 3 pods have the highest CPU usage
+OPERATIONS: N/A
+
+Original: "show me top 5 pods by memory"
+HEALTH: N/A
+DESCRIBE: N/A
+RESOURCES: N/A
+MONITOR: show me top 5 pods by memory
 OPERATIONS: N/A
 
 Original: "what was the CPU trend in the last hour"
@@ -465,6 +547,7 @@ def ask_k8s_agent(question: str, api_key: str = None, verbose: bool = False) -> 
     """
     Ask the Kubernetes supervisor agent a question and get a response.
     Uses LangGraph StateGraph pattern (equivalent to sample's create_react_agent approach).
+    Maintains conversation history across calls.
     
     Args:
         question: User's question about the K8s cluster
@@ -474,6 +557,8 @@ def ask_k8s_agent(question: str, api_key: str = None, verbose: bool = False) -> 
     Returns:
         Dict with 'answer' and 'messages' (full conversation)
     """
+    global _conversation_state
+    
     try:
         # Create supervisor workflow (manual replacement for create_react_agent)
         workflow = create_k8s_supervisor_agent(api_key=api_key, verbose=verbose)
@@ -481,14 +566,15 @@ def ask_k8s_agent(question: str, api_key: str = None, verbose: bool = False) -> 
         # Compile the workflow (same as sample pattern)
         app = workflow.compile()
         
-        # Execute with user question (following sample pattern exactly)
+        # Add new question to conversation history
         from langchain_core.messages import HumanMessage
+        _conversation_state["messages"].append(HumanMessage(content=question))
         
-        result = app.invoke({
-            "messages": [
-                HumanMessage(content=question)
-            ]
-        })
+        # Execute with full conversation context
+        result = app.invoke(_conversation_state)
+        
+        # Update conversation state with result
+        _conversation_state["messages"] = result.get("messages", [])
         
         # Extract final answer (last AI message from supervisor)
         messages = result.get("messages", [])
