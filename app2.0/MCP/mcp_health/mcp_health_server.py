@@ -88,16 +88,25 @@ def describe_node(node_name: str = "all") -> str:
 
 
 @mcp.tool()
-def get_cluster_events(namespace: str = "all") -> str:
-    """Get cluster events to see what's happening in the cluster."""
-    cache_key = f"events_{namespace}"
+def get_cluster_events(namespace: str = "all", minutes: int = 10) -> str:
+    """Get recent cluster events from the last N minutes (default: 10 minutes).
+    This shows only REAL-TIME events, not old/stale events."""
+    cache_key = f"events_{namespace}_{minutes}"
     
     def _execute():
         try:
+            # Use field-selector to get events from last N minutes
+            # Calculate time window: now - N minutes
+            time_window = f"{minutes}m"
+            
             if namespace == "all":
-                full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events --all-namespaces --sort-by='.lastTimestamp'"
+                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events --all-namespaces --sort-by='.lastTimestamp' --field-selector type!=Normal"
             else:
-                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -n {namespace} --sort-by='.lastTimestamp'"
+                full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -n {namespace} --sort-by='.lastTimestamp' --field-selector type!=Normal"
+            
+            # Add filter to only show recent events (last N minutes)
+            # Use jq to filter by lastTimestamp
+            full_command += f" -o json | jq -r '.items | map(select(.lastTimestamp != null and (now - ((.lastTimestamp | fromdateiso8601))) < {minutes * 60})) | if length == 0 then \"No recent events found in the last {minutes} minutes. Cluster is operating normally.\" else (map(\"\\(.lastTimestamp) | \\(.metadata.namespace) | \\(.type) | \\(.reason) | \\(.message)\") | join(\"\\n\")) end'"
             
             result = subprocess.run([
                 "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
@@ -107,7 +116,10 @@ def get_cluster_events(namespace: str = "all") -> str:
             ], capture_output=True, text=True, timeout=8)
             
             if result.returncode == 0:
-                return result.stdout
+                output = result.stdout.strip()
+                if not output or output == "null":
+                    return f"No recent events found in the last {minutes} minutes. Cluster is operating normally."
+                return output
             else:
                 return f"Error: {result.stderr}"
         except Exception as e:

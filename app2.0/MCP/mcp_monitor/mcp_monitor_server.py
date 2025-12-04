@@ -15,7 +15,7 @@ port = int(os.getenv('PORT', '8004'))
 mcp = FastMCP("K8s-Monitor", port=port)
 
 # Prometheus configuration
-PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://34.59.188.124:9090')
+PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://34.56.26.202:9090')
 PROMETHEUS_TIMEOUT = 10
 
 
@@ -92,6 +92,19 @@ def query_prometheus_range(query: str, start: str, end: str, step: str = "1m") -
         def parse_time(time_str):
             if time_str == "now":
                 return int(time.time())
+            # Handle "now-1h", "now-30m", etc.
+            elif time_str.startswith("now-"):
+                offset = time_str[4:]  # Remove "now-"
+                if offset.endswith('h'):
+                    hours = int(offset[:-1])
+                    return int(time.time() - hours * 3600)
+                elif offset.endswith('m'):
+                    minutes = int(offset[:-1])
+                    return int(time.time() - minutes * 60)
+                elif offset.endswith('d'):
+                    days = int(offset[:-1])
+                    return int(time.time() - days * 86400)
+            # Handle "1h", "30m", "2d" (time ago from now)
             elif time_str.endswith('h'):
                 hours = int(time_str[:-1])
                 return int(time.time() - hours * 3600)
@@ -103,7 +116,7 @@ def query_prometheus_range(query: str, start: str, end: str, step: str = "1m") -
                 return int(time.time() - days * 86400)
             else:
                 # Assume it's already a timestamp
-                return time_str
+                return int(time_str)
         
         start_ts = parse_time(start)
         end_ts = parse_time(end)

@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K8s AI Assistant - Architecture Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .layer {
+            margin-bottom: 40px;
+            border-left: 4px solid #3498db;
+            padding-left: 20px;
+        }
+
+        .layer-title {
+            font-size: 1.5em;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .component-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .component {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            flex: 1;
+            min-width: 250px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .component:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+
+        .component-title {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+            font-weight: bold;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            padding-bottom: 5px;
+        }
+
+        .component-info {
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+
+        .tool-list {
+            margin-top: 10px;
+            padding-left: 15px;
+            font-size: 0.85em;
+        }
+
+        .tool-list li {
+            margin: 5px 0;
+        }
+
+        .supervisor {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .agent {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .mcp-server {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        .execution {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+
+        .flow-arrow {
+            text-align: center;
+            font-size: 2em;
+            color: #3498db;
+            margin: 20px 0;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #ecf0f1;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.75em;
+            margin: 2px;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .legend-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .component-row {
+                flex-direction: column;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 K8s AI Assistant Architecture</h1>
+        <p class="subtitle">Multi-Agent System with MCP (Model Context Protocol)</p>
+
+        <!-- Layer 1: User Interface -->
+        <div class="layer">
+            <div class="layer-title">📱 Layer 1: User Interface</div>
+            <div class="component-row">
+                <div class="component" onclick="alert('CLI Entry Point\n\nFile: cli.py\nCommand: python cli.py -q \"your question\"\nReceives user questions and prints responses')">
+                    <div class="component-title">🖥️ CLI Interface</div>
+                    <div class="component-info">
+                        <strong>File:</strong> cli.py<br>
+                        <strong>Purpose:</strong> Command-line entry point<br>
+                        <span class="badge">Terminal Input</span>
+                    </div>
+                </div>
+                <div class="component" onclick="alert('Flask Web Interface\n\nFile: app.py\nPort: 7000\nEndpoint: /ask\nProvides web-based question interface')">
+                    <div class="component-title">🌐 Flask Web App</div>
+                    <div class="component-info">
+                        <strong>File:</strong> app.py<br>
+                        <strong>Port:</strong> 7000<br>
+                        <span class="badge">HTTP API</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-arrow">⬇️</div>
+
+        <!-- Layer 2: Supervisor Agent -->
+        <div class="layer">
+            <div class="layer-title">🎯 Layer 2: Supervisor Agent (Router & Orchestrator)</div>
+            <div class="component-row">
+                <div class="component supervisor" onclick="alert('Supervisor Agent\n\nFile: agents/k8s_agent.py\nLLM: Claude 3 Haiku\n\nResponsibilities:\n1. Question type check (K8S/GREETING/META/CASUAL)\n2. Category classification (HEALTH/DESCRIBE/RESOURCES/MONITOR/OPERATIONS)\n3. Sub-question extraction\n4. Parallel agent execution (ThreadPoolExecutor)\n5. Response synthesis\n\nNo tools - only routes to specialized agents!')">
+                    <div class="component-title">🧠 Supervisor Agent</div>
+                    <div class="component-info">
+                        <strong>File:</strong> agents/k8s_agent.py<br>
+                        <strong>LLM:</strong> Claude 3 Haiku<br>
+                        <strong>Function:</strong> Routes questions to specialized agents<br>
+                        <strong>Tools:</strong> None (routing only)<br>
+                        <span class="badge">4 LLM Calls</span>
+                        <span class="badge">ThreadPoolExecutor</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-arrow">⬇️ Parallel Execution ⬇️</div>
+
+        <!-- Layer 3: Specialized Agents -->
+        <div class="layer">
+            <div class="layer-title">🤖 Layer 3: Specialized Agents (5 Agents)</div>
+            <div class="component-row">
+                <div class="component agent" onclick="alert('Health Agent\n\nFile: agents/health_agent.py\nMCP Server: Port 8000\nLLM: Claude 3 Haiku\n\nResponsibility: Node health, cluster events, control plane\n\nTools:\n• get_cluster_nodes - List all nodes\n• describe_node - Node conditions, taints\n• get_cluster_events - Recent warnings/errors (10min)')">
+                    <div class="component-title">🏥 Health Agent</div>
+                    <div class="component-info">
+                        <strong>MCP:</strong> Port 8000<br>
+                        <strong>Scope:</strong> Node health, cluster events<br>
+                        <ul class="tool-list">
+                            <li>get_cluster_nodes</li>
+                            <li>describe_node</li>
+                            <li>get_cluster_events</li>
+                        </ul>
+                        <span class="badge">3 Tools</span>
+                    </div>
+                </div>
+                <div class="component agent" onclick="alert('Describe Agent\n\nFile: agents/describe_agent.py\nMCP Server: Port 8002\nLLM: Claude 3 Haiku\n\nResponsibility: Resource listing, counting, pod status\n\nTools:\n• list_k8s_resources - List ANY resource type\n• describe_k8s_resource - Detailed info\n• count_k8s_resources - Count with filters\n• get_all_resources_in_namespace - Quick overview\n• get_resource_yaml - Export YAML')">
+                    <div class="component-title">📝 Describe Agent</div>
+                    <div class="component-info">
+                        <strong>MCP:</strong> Port 8002<br>
+                        <strong>Scope:</strong> Resource listing, pod status<br>
+                        <ul class="tool-list">
+                            <li>list_k8s_resources</li>
+                            <li>describe_k8s_resource</li>
+                            <li>count_k8s_resources</li>
+                            <li>get_resource_yaml</li>
+                            <li>get_pod_logs</li>
+                        </ul>
+                        <span class="badge">5 Tools</span>
+                    </div>
+                </div>
+                <div class="component agent" onclick="alert('Resources Agent\n\nFile: agents/resources_agent.py\nMCP: Direct kubectl (no server)\nLLM: Claude 3 Haiku\n\nResponsibility: CPU/memory allocation, capacity, limits/requests\n\nTools:\n• get_node_resources - Capacity/allocatable\n• get_pod_resources - Requests/limits\n• get_namespace_resources - Aggregate usage\n• get_node_utilization - Current usage\n• get_pod_utilization - Pod usage\n• get_pod_memory_comparison - Find highest')">
+                    <div class="component-title">📊 Resources Agent</div>
+                    <div class="component-info">
+                        <strong>MCP:</strong> Direct kubectl<br>
+                        <strong>Scope:</strong> CPU/memory allocation, capacity<br>
+                        <ul class="tool-list">
+                            <li>get_node_resources</li>
+                            <li>get_pod_resources</li>
+                            <li>get_pod_memory_comparison</li>
+                        </ul>
+                        <span class="badge">6 Tools</span>
+                    </div>
+                </div>
+            </div>
+            <div class="component-row">
+                <div class="component agent" onclick="alert('Monitor Agent\n\nFile: agents/monitor_agent.py\nMCP Server: Port 8004\nLLM: Claude 3 Haiku\n\nResponsibility: Real-time metrics, trends, Prometheus\n\nTools:\n• query_prometheus_instant - Current values\n• query_prometheus_range - Historical data\n• get_node_metrics - Node CPU/memory/disk\n• get_pod_metrics - Pod metrics\n• get_top_pods_by_resource - Highest usage\n• check_prometheus_targets - Health check')">
+                    <div class="component-title">📈 Monitor Agent</div>
+                    <div class="component-info">
+                        <strong>MCP:</strong> Port 8004<br>
+                        <strong>Scope:</strong> Prometheus metrics, trends<br>
+                        <ul class="tool-list">
+                            <li>query_prometheus_instant</li>
+                            <li>get_node_metrics</li>
+                            <li>get_top_pods_by_resource</li>
+                        </ul>
+                        <span class="badge">6 Tools</span>
+                        <span class="badge">Prometheus</span>
+                    </div>
+                </div>
+                <div class="component agent" onclick="alert('Operations Agent\n\nFile: agents/operations_agent.py\nMCP Server: Port 8003\nLLM: Claude 3 Haiku\n\nResponsibility: Write operations - scale, delete, restart\n\nTools:\n• scale_deployment_tool - Scale replicas\n• restart_deployment_tool - Rollout restart\n• rollback_deployment_tool - Rollback\n• delete_pod_tool - Delete pods\n• delete_deployment_tool - Delete deployment\n• cordon_node_tool - Mark unschedulable\n• drain_node_tool - Evict pods\n• apply_yaml_config_tool - Apply YAML\n...and 7 more tools')">
+                    <div class="component-title">⚙️ Operations Agent</div>
+                    <div class="component-info">
+                        <strong>MCP:</strong> Port 8003<br>
+                        <strong>Scope:</strong> Scaling, updates, deletions<br>
+                        <ul class="tool-list">
+                            <li>scale_deployment_tool</li>
+                            <li>delete_deployment_tool</li>
+                            <li>restart_deployment_tool</li>
+                            <li>apply_yaml_config_tool</li>
+                            <li>...11 more tools</li>
+                        </ul>
+                        <span class="badge">15 Tools</span>
+                        <span class="badge">Write Ops</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-arrow">⬇️ MCP Protocol (HTTP) ⬇️</div>
+
+        <!-- Layer 4: MCP Servers -->
+        <div class="layer">
+            <div class="layer-title">🔧 Layer 4: MCP Servers (Tool Execution)</div>
+            <div class="component-row">
+                <div class="component mcp-server" onclick="alert('MCP Health Server\n\nFile: MCP/mcp_health/mcp_health_server.py\nPort: 8000\nFramework: FastMCP\n\nFeatures:\n• 60-second cache\n• 8-second timeout\n• Async tool execution\n\nExecutes:\n• SSH to k8s-master-001\n• kubectl get nodes\n• kubectl get events (time-filtered)')">
+                    <div class="component-title">🔌 MCP Health Server</div>
+                    <div class="component-info">
+                        <strong>Port:</strong> 8000<br>
+                        <strong>Cache:</strong> 60s TTL<br>
+                        <strong>Tools:</strong> 3<br>
+                        <span class="badge">FastMCP</span>
+                        <span class="badge">StreamableHTTP</span>
+                    </div>
+                </div>
+                <div class="component mcp-server" onclick="alert('MCP Describe Server\n\nFile: MCP/mcp_describe/mcp_describe_server.py\nPort: 8002\nFramework: FastMCP\n\nFeatures:\n• 60-second cache\n• Generic resource handling\n• YAML export\n• Pod logs\n\nExecutes:\n• kubectl get <any-resource>\n• kubectl describe\n• kubectl logs')">
+                    <div class="component-title">🔌 MCP Describe Server</div>
+                    <div class="component-info">
+                        <strong>Port:</strong> 8002<br>
+                        <strong>Cache:</strong> 60s TTL<br>
+                        <strong>Tools:</strong> 5<br>
+                        <span class="badge">FastMCP</span>
+                    </div>
+                </div>
+                <div class="component mcp-server" onclick="alert('MCP Operations Server\n\nFile: MCP/mcp_operations/mcp_operations_server.py\nPort: 8003\nFramework: FastMCP\n\nFeatures:\n• No cache (write operations)\n• Confirmation for destructive ops\n• Dry-run support\n\nExecutes:\n• kubectl scale\n• kubectl delete\n• kubectl apply\n• kubectl cordon/drain')">
+                    <div class="component-title">🔌 MCP Operations Server</div>
+                    <div class="component-info">
+                        <strong>Port:</strong> 8003<br>
+                        <strong>Cache:</strong> None<br>
+                        <strong>Tools:</strong> 15<br>
+                        <span class="badge">FastMCP</span>
+                        <span class="badge">Write Ops</span>
+                    </div>
+                </div>
+                <div class="component mcp-server" onclick="alert('MCP Monitor Server\n\nFile: MCP/mcp_monitor/mcp_monitor_server.py\nPort: 8004\nFramework: FastMCP\n\nFeatures:\n• No cache (real-time metrics)\n• Prometheus integration\n• PromQL queries\n\nExecutes:\n• HTTP requests to Prometheus\n• Metric queries\n• Time-series analysis')">
+                    <div class="component-title">🔌 MCP Monitor Server</div>
+                    <div class="component-info">
+                        <strong>Port:</strong> 8004<br>
+                        <strong>Cache:</strong> None<br>
+                        <strong>Tools:</strong> 6<br>
+                        <span class="badge">FastMCP</span>
+                        <span class="badge">Prometheus</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-arrow">⬇️ SSH / HTTP ⬇️</div>
+
+        <!-- Layer 5: Execution Layer -->
+        <div class="layer">
+            <div class="layer-title">☁️ Layer 5: Execution Layer (Google Cloud)</div>
+            <div class="component-row">
+                <div class="component execution" onclick="alert('k8s-master-001\n\nExternal IP: 34.29.145.20\nInternal IP: 10.128.0.6\nZone: us-central1-a\n\nComponents:\n• Kubernetes API Server (6443)\n• etcd\n• kubectl\n• CoreDNS\n\nAll MCP servers execute kubectl here via SSH')">
+                    <div class="component-title">🖥️ k8s-master-001</div>
+                    <div class="component-info">
+                        <strong>Type:</strong> Control Plane<br>
+                        <strong>IP:</strong> 34.29.145.20<br>
+                        <strong>Access:</strong> gcloud compute ssh<br>
+                        <span class="badge">kubectl</span>
+                        <span class="badge">K8s API</span>
+                    </div>
+                </div>
+                <div class="component execution" onclick="alert('k8s-worker-01\n\nExternal IP: 34.135.69.81\nInternal IP: 10.128.0.7\nZone: us-central1-a\n\nComponents:\n• kube-proxy\n• kube-flannel (CNI)\n• Application workloads\n\nStatus: SchedulingDisabled (cordoned)')">
+                    <div class="component-title">🖥️ k8s-worker-01</div>
+                    <div class="component-info">
+                        <strong>Type:</strong> Worker Node<br>
+                        <strong>IP:</strong> 34.135.69.81<br>
+                        <strong>Status:</strong> Ready (SchedulingDisabled)<br>
+                        <span class="badge">Worker</span>
+                    </div>
+                </div>
+                <div class="component execution" onclick="alert('Prometheus Server\n\nURL: http://34.59.188.124:9090\nType: External to K8s\n\nMonitor Agent queries this for:\n• Node metrics (CPU/memory/disk)\n• Pod metrics\n• Time-series data\n• Trend analysis\n\nMetrics collected by:\n• node_exporter\n• kube-state-metrics')">
+                    <div class="component-title">📊 Prometheus</div>
+                    <div class="component-info">
+                        <strong>URL:</strong> 34.59.188.124:9090<br>
+                        <strong>Type:</strong> Metrics Backend<br>
+                        <strong>Used by:</strong> Monitor Agent<br>
+                        <span class="badge">Metrics</span>
+                        <span class="badge">PromQL</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-number">6</div>
+                <div class="stat-label">Total Agents</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">4</div>
+                <div class="stat-label">MCP Servers</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">35</div>
+                <div class="stat-label">Total Tools</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">~6s</div>
+                <div class="stat-label">Parallel Query Time</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">60s</div>
+                <div class="stat-label">Cache TTL</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">5x</div>
+                <div class="stat-label">Speedup (vs Sequential)</div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color supervisor"></div>
+                <span>Supervisor (Router)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color agent"></div>
+                <span>Specialized Agent</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color mcp-server"></div>
+                <span>MCP Server</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color execution"></div>
+                <span>Execution Layer</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('K8s AI Assistant Architecture Visualization Loaded');
+        console.log('Click on any component to see details!');
+    </script>
+</body>
+</html>

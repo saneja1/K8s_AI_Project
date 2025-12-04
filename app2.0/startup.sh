@@ -19,11 +19,13 @@ MCP_DESCRIBE_SERVER_NAME="mcp_describe_server"
 MCP_DESCRIBE_SERVER_SCRIPT="MCP/mcp_describe/mcp_describe_server.py"
 MCP_DESCRIBE_PID_FILE="$APP_DIR/mcp_describe.pid"
 MCP_DESCRIBE_LOG_FILE="$APP_DIR/mcp_describe.log"
+MCP_DESCRIBE_PORT=8002
 
 MCP_RESOURCES_SERVER_NAME="mcp_resources_server"
 MCP_RESOURCES_SERVER_SCRIPT="MCP/mcp_resources/mcp_resources_server.py"
 MCP_RESOURCES_PID_FILE="$APP_DIR/mcp_resources.pid"
 MCP_RESOURCES_LOG_FILE="$APP_DIR/mcp_resources.log"
+MCP_RESOURCES_PORT=8001
 
 MCP_OPERATIONS_SERVER_NAME="mcp_operations_server"
 MCP_OPERATIONS_SERVER_SCRIPT="MCP/mcp_operations/mcp_operations_server.py"
@@ -182,8 +184,8 @@ start() {
     fi
     
     # Start MCP Describe Server
-    echo -e "${YELLOW}Starting MCP Describe Server on port 8001...${NC}"
-    export PORT=8001
+    echo -e "${YELLOW}Starting MCP Describe Server on port 8002...${NC}"
+    export PORT=8002
     nohup python3 "$MCP_DESCRIBE_SERVER_SCRIPT" > "$MCP_DESCRIBE_LOG_FILE" 2>&1 &
     echo $! > "$MCP_DESCRIBE_PID_FILE"
     unset PORT
@@ -200,8 +202,8 @@ start() {
     fi
     
     # Start MCP Resources Server
-    echo -e "${YELLOW}Starting MCP Resources Server on port 8002...${NC}"
-    export PORT=8002
+    echo -e "${YELLOW}Starting MCP Resources Server on port 8001...${NC}"
+    export PORT=8001
     nohup python3 "$MCP_RESOURCES_SERVER_SCRIPT" > "$MCP_RESOURCES_LOG_FILE" 2>&1 &
     echo $! > "$MCP_RESOURCES_PID_FILE"
     unset PORT
@@ -267,8 +269,8 @@ start() {
         echo -e "${GREEN}$APP_NAME started successfully (PID: $(cat $PID_FILE))${NC}"
         echo -e "${GREEN}App is running at: http://localhost:7000${NC}"
         echo -e "${GREEN}MCP Health Server: http://localhost:8000/mcp${NC}"
-        echo -e "${GREEN}MCP Describe Server: http://localhost:8001/mcp${NC}"
-        echo -e "${GREEN}MCP Resources Server: http://localhost:8002/mcp${NC}"
+        echo -e "${GREEN}MCP Describe Server: http://localhost:8002/mcp${NC}"
+        echo -e "${GREEN}MCP Resources Server: http://localhost:8001/mcp${NC}"
         echo -e "${GREEN}MCP Operations Server: http://localhost:8003/mcp${NC}"
         echo -e "${GREEN}MCP Monitor Server: http://localhost:8004/mcp${NC}"
         echo -e "${GREEN}Logs: $LOG_FILE${NC}"
@@ -513,7 +515,7 @@ status() {
     if is_mcp_describe_running; then
         MCP_PID=$(cat "$MCP_DESCRIBE_PID_FILE")
         echo -e "${GREEN}MCP Describe Server is running (PID: $MCP_PID)${NC}"
-        echo -e "${GREEN}MCP URL: http://localhost:8001/mcp${NC}"
+        echo -e "${GREEN}MCP URL: http://localhost:8002/mcp${NC}"
         echo -e "${GREEN}Log file: $MCP_DESCRIBE_LOG_FILE${NC}"
         
         # Show recent logs
@@ -531,7 +533,7 @@ status() {
     if is_mcp_resources_running; then
         MCP_PID=$(cat "$MCP_RESOURCES_PID_FILE")
         echo -e "${GREEN}MCP Resources Server is running (PID: $MCP_PID)${NC}"
-        echo -e "${GREEN}MCP URL: http://localhost:8002/mcp${NC}"
+        echo -e "${GREEN}MCP URL: http://localhost:8001/mcp${NC}"
         echo -e "${GREEN}Log file: $MCP_RESOURCES_LOG_FILE${NC}"
         
         # Show recent logs

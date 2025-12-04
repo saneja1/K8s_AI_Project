@@ -208,20 +208,18 @@ DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"which pods are running/pending/failed"** → DESCRIBE
 - NOTE: For metrics like CPU/memory usage, use MONITOR instead
 
-OPERATIONS CATEGORY (write operations):
+OPERATIONS CATEGORY (write operations and deployment management):
 - **"scale deployment" or "scale to X replicas"** → OPERATIONS (ONLY)
 - **"create configmap/pod/deployment" or "delete namespace"** → OPERATIONS (ONLY)
 - **"apply YAML" or "restart deployment" or "rollback"** → OPERATIONS (ONLY)
+- **"rollout status" or "deployment rollout status" or "get rollout status"** → OPERATIONS (ONLY)
+- **"rollout restart" or "rollback deployment"** → OPERATIONS (ONLY)
 
 - "list pods/services/deployments" → DESCRIBE (ONLY)
 - "how many pods/services" → DESCRIBE (ONLY)
 - "describe pod/service/deployment" → DESCRIBE (ONLY)
 - "what namespaces exist" → DESCRIBE (ONLY)
 - "show me all X" → DESCRIBE (where X is specific resource type like pods, not general status)
-
-- **"scale deployment" or "scale to X replicas"** → OPERATIONS (ONLY)
-- **"create configmap/pod/deployment" or "delete namespace"** → OPERATIONS (ONLY)
-- **"apply YAML" or "restart deployment" or "rollback"** → OPERATIONS (ONLY)
 
 MULTI-AGENT EXAMPLES:
 - "show me all pods AND their health" → DESCRIBE,HEALTH (parallel)
