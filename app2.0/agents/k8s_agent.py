@@ -155,7 +155,7 @@ Query: "{user_question}"
 Categories:
 1. HEALTH - Node health status, node readiness, cluster-level events, control plane component health, cluster health check (NOT individual pod health/status)
 2. RESOURCES - Quick resource snapshot using kubectl top (current CPU/memory only, no history)
-3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods
+3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods, POD LOGS (get/show/retrieve logs)
 4. MONITOR - Prometheus metrics, CPU/memory/disk trends, historical data, time-series analysis, resource usage over time
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
 6. OPERATIONS - Scaling deployments, updates, rollouts, restarts, maintenance, creating/deleting resources, applying YAML configs
@@ -206,6 +206,9 @@ DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"pod health" or "unhealthy pods" or "pod status"** → DESCRIBE
 - **"pods failing" or "pods in error" or "crashed pods"** → DESCRIBE
 - **"which pods are running/pending/failed"** → DESCRIBE
+- **"logs" or "pod logs" or "get logs" or "show logs" or "retrieve logs" or "output from pod"** → DESCRIBE (ONLY)
+- **"last N lines of logs" or "tail logs" or "recent logs"** → DESCRIBE (ONLY)
+- **"logs from X pod" or "X pod logs" or "logs for X"** → DESCRIBE (ONLY)
 - NOTE: For metrics like CPU/memory usage, use MONITOR instead
 
 OPERATIONS CATEGORY (write operations and deployment management):
@@ -290,9 +293,9 @@ RESOURCES: N/A
 MONITOR: find pod with highest memory
 OPERATIONS: N/A
 
-Original: "what taints are on k8s-master-001"
+Original: "what taints are on k8s-master-01"
 HEALTH: N/A
-DESCRIBE: what taints are on node k8s-master-001
+DESCRIBE: what taints are on node k8s-master-01
 RESOURCES: N/A
 MONITOR: N/A
 OPERATIONS: N/A

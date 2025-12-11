@@ -598,3 +598,4 @@ if __name__ == "__main__":
     # Port should be set via PORT environment variable when launching this script
     # Example: PORT=8004 python3 mcp_monitor_server.py
     mcp.run(transport="streamable-http")
+

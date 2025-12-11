@@ -17,8 +17,8 @@ app = Flask(__name__)
 
 # VM Configuration - from dashboard.py
 VM_LIST = [
-    {"name": "k8s-master-001", "zone": "us-central1-a", "role": "Master", "internal_ip": "10.128.0.6", "external_ip": "34.69.84.204"},
-    {"name": "k8s-worker-01", "zone": "us-central1-a", "role": "Worker", "internal_ip": "10.128.0.7", "external_ip": "34.133.61.216"}
+    {"name": "k8s-master-01", "zone": "us-west1-a", "role": "Master", "internal_ip": "10.138.0.2", "external_ip": "TBD"},
+    {"name": "k8s-worker-01", "zone": "us-west1-a", "role": "Worker", "internal_ip": "10.138.0.3", "external_ip": "TBD"}
 ]
 
 # Constants
@@ -169,12 +169,12 @@ def get_pods_info():
     try:
         log_command("kubectl get pods --all-namespaces -o json", "Running", "Fetching pod data from cluster via SSH")
         
-        # Execute kubectl on master node via SSH
-        full_command = "export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl get pods --all-namespaces -o json"
+        # Execute kubectl on master node via SSH (needs sudo for kubeconfig access)
+        full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods --all-namespaces -o json"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a", 
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a", 
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=15)
@@ -219,12 +219,12 @@ def execute_kubectl_command(command, timeout=10):
     try:
         log_command(f"kubectl {command}", "Running", f"Executing kubectl command on master node")
         
-        # Execute kubectl on the master node via SSH
-        full_command = f"export KUBECONFIG=/etc/kubernetes/admin.conf && kubectl {command}"
+        # Execute kubectl on the master node via SSH (needs sudo for kubeconfig access)
+        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl {command}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=timeout)
@@ -2000,4 +2000,18 @@ def chat():
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
+    import socket
+    
+    # Get WSL2 IP address
+    hostname = socket.gethostname()
+    wsl_ip = socket.gethostbyname(hostname)
+    
+    print("\n" + "="*60)
+    print("🚀 K8s Multi-Agent Dashboard Started!")
+    print("="*60)
+    print(f"📍 Local URL:      http://localhost:7000")
+    print(f"📍 WSL2 URL:       http://{wsl_ip}:7000")
+    print(f"📍 Network URL:    http://0.0.0.0:7000")
+    print("="*60 + "\n")
+    
     app.run(host='0.0.0.0', port=7000, debug=True)

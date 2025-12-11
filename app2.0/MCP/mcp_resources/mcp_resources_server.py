@@ -51,8 +51,8 @@ def get_node_resources() -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -89,8 +89,8 @@ def get_pod_resources(namespace: str = "all") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o json"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -121,8 +121,8 @@ def get_namespace_resources() -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A -o json"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -155,8 +155,8 @@ def get_node_utilization() -> str:
             top_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top nodes"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={top_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -168,8 +168,8 @@ def get_node_utilization() -> str:
             describe_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={describe_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -211,8 +211,8 @@ def get_pod_utilization(namespace: str = "all") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -242,6 +242,93 @@ def get_pod_memory_comparison(namespace: str = "all") -> str:
     """
     # Use the implementation from tools_resources.py (call .invoke() on StructuredTool)
     return _get_pod_memory_comparison_impl.invoke({"namespace": namespace})
+
+
+@mcp.tool()
+def get_node_limits(node_name: str = "all") -> str:
+    """
+    **PRIMARY TOOL FOR "LIMITS" QUERIES** - Get ONLY the Limits column values for CPU and memory.
+    
+    ⚠️ USE THIS TOOL whenever user asks about "limits" or "limit":
+    - "what are CPU and memory limits?"
+    - "show me limits on master"
+    - "CPU limit for worker"
+    - "memory limits"
+    
+    This extracts ONLY the rightmost "Limits" column from kubectl describe node output.
+    Returns clean CPU Limits and Memory Limits values without other columns.
+    
+    Args:
+        node_name: Node name to check, or "all" for all nodes (default: "all")
+                   Examples: "k8s-master-01", "k8s-worker-01", "all"
+    
+    Returns:
+        String with CPU limits and memory limits extracted from Limits column only
+    """
+    cache_key = f"node_limits_{node_name}"
+    
+    def _execute():
+        try:
+            full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
+            
+            result = subprocess.run([
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
+                f"--command={full_command}",
+                "--quiet"
+            ], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+            
+            if result.returncode != 0:
+                return f"Error: {result.stderr}"
+            
+            # Parse the output to extract only Limits column
+            output = result.stdout
+            lines = output.split('\n')
+            
+            result_text = ""
+            current_node = None
+            in_allocated_section = False
+            
+            for i, line in enumerate(lines):
+                # Track current node name
+                if line.startswith("Name:"):
+                    current_node = line.split("Name:")[1].strip()
+                    if node_name != "all" and current_node != node_name:
+                        current_node = None
+                        continue
+                
+                # Find Allocated resources section
+                if current_node and "Allocated resources:" in line:
+                    in_allocated_section = True
+                    result_text += f"\nNode: {current_node}\n"
+                    continue
+                
+                # Parse the Limits column (rightmost column)
+                if in_allocated_section and current_node:
+                    # Look for cpu line
+                    if line.strip().startswith("cpu"):
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            cpu_limits = parts[3]  # Rightmost column
+                            result_text += f"  CPU Limits: {cpu_limits}\n"
+                    
+                    # Look for memory line
+                    elif line.strip().startswith("memory"):
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            memory_limits = parts[3]  # Rightmost column
+                            result_text += f"  Memory Limits: {memory_limits}\n"
+                        in_allocated_section = False  # Done with this node
+            
+            if not result_text:
+                return "No limits data found for specified node(s)"
+            
+            return result_text.strip()
+            
+        except Exception as e:
+            return f"Error executing command: {str(e)}"
+    
+    return _cached_kubectl_command(cache_key, _execute)
 
 
 if __name__ == "__main__":

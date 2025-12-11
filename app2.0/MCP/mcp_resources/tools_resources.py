@@ -20,8 +20,8 @@ def get_node_resources() -> str:
         full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -53,8 +53,8 @@ def get_pod_resources(namespace: str = "all") -> str:
             full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o json"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -80,8 +80,8 @@ def get_namespace_resources() -> str:
         full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A -o json"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -109,8 +109,8 @@ def get_node_utilization() -> str:
         top_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top nodes"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={top_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -122,8 +122,8 @@ def get_node_utilization() -> str:
         describe_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={describe_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -162,8 +162,8 @@ def get_pod_utilization(namespace: str = "all") -> str:
             top_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={top_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)
@@ -205,8 +205,8 @@ def get_pod_memory_comparison(namespace: str = "all") -> str:
             full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o json"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=10)

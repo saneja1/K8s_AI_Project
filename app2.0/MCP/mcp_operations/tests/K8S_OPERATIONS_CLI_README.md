@@ -5,7 +5,7 @@ Standalone command-line interface for all 15 Kubernetes operations tools. This C
 ## Location
 
 ```bash
-/home/K8s_AI_Project/app2.0/k8s_operations_cli.py
+/home/saneja/K8s_AI_Project/app2.0/k8s_operations_cli.py
 ```
 
 ## Prerequisites
@@ -18,7 +18,7 @@ Standalone command-line interface for all 15 Kubernetes operations tools. This C
 
 ```bash
 # Activate virtual environment
-cd /home/K8s_AI_Project
+cd /home/saneja/K8s_AI_Project
 source .venv/bin/activate
 
 # Navigate to app2.0 directory
@@ -296,7 +296,7 @@ Returns formatted results
 ### Command Not Found
 ```bash
 # Make sure you're in the right directory
-cd /home/K8s_AI_Project/app2.0
+cd /home/saneja/K8s_AI_Project/app2.0
 
 # Check file exists
 ls -la k8s_operations_cli.py

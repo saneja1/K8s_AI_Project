@@ -3,7 +3,7 @@ Direct test of the new get_pod_memory_comparison tool
 """
 
 import sys
-sys.path.insert(0, '/home/K8s_AI_Project/app2.0/MCP/mcp_resources')
+sys.path.insert(0, '/home/saneja/K8s_AI_Project/app2.0/MCP/mcp_resources')
 
 from tools_resources import get_pod_memory_comparison
 

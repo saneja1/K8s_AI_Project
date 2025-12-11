@@ -56,7 +56,7 @@ Connection from MCP Operations Server to 'restart_deployment_tool': ✅ YES/❌ 
 
 **Run command:**
 ```bash
-cd /home/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
+cd /home/saneja/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
 python3 test_operations_mcp_connection.py
 ```
 
@@ -83,7 +83,7 @@ python3 test_operations_mcp_connection.py
 
 **Run command:**
 ```bash
-cd /home/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
+cd /home/saneja/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
 python3 test_operations_mcp_execution.py
 ```
 
@@ -130,7 +130,7 @@ Both test files validate these operations tools:
 - MCP Operations Server module must be importable
 - FastMCP library installed (`pip install fastmcp`)
 - Virtual environment activated
-- Working directory: `/home/K8s_AI_Project/app2.0/MCP/mcp_operations/tests`
+- Working directory: `/home/saneja/K8s_AI_Project/app2.0/MCP/mcp_operations/tests`
 
 ---
 
@@ -139,7 +139,7 @@ Both test files validate these operations tools:
 ### Import Errors
 ```bash
 # Ensure you're in the correct directory
-cd /home/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
+cd /home/saneja/K8s_AI_Project/app2.0/MCP/mcp_operations/tests
 
 # Tests expect parent directory structure:
 # tests/

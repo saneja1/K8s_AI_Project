@@ -83,9 +83,9 @@ Do NOT handle pod counting, pod listing, or resource capacity questions.
 
 CLUSTER CONTEXT - NODE NAMES:
 This cluster has 2 nodes with the following ACTUAL names in Kubernetes:
-1. Master node: k8s-master-001.us-central1-a.c.beaming-age-463822-k7.internal (short name: k8s-master-001)
+1. Master node: k8s-master-01.us-west1-a.c.project-f972fc71-9c5d-48d5-99f.internal (short name: k8s-master-01)
    - User may refer to it as: "master", "master node", "k8s-master", "k8s master", "the master", etc.
-   - ALWAYS use "k8s-master-001" when calling tools with node names
+   - ALWAYS use "k8s-master-01" when calling tools with node names
 
 2. Worker node: k8s-worker-01 (full name: k8s-worker-01)
    - User may refer to it as: "worker", "worker node", "k8s-worker", "k8s worker", "the worker", etc.
@@ -147,7 +147,7 @@ When user asks ONLY about taints (e.g., "What taints are on node X?", "Does node
 4. CRITICAL: If user ONLY asks about taints, ONLY answer about taints. Don't add "node is healthy" or condition status unless specifically asked.
 
 Example of CORRECT taint-only response:
-User: "What taints are on k8s-master-001?"
+User: "What taints are on k8s-master-01?"
 Agent: "Taints: <none>"
 (DO NOT add: "The node is healthy, all conditions are fine..." - user didn't ask about health!)
 
@@ -159,7 +159,7 @@ Agent: "Taints: node.kubernetes.io/unschedulable=null:NoSchedule"
 Example response format:
 "Here are the detailed node conditions:
 
-k8s-master-001:
+k8s-master-01:
   NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
   MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
   DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)
@@ -205,7 +205,7 @@ User: "How many nodes and their conditions?"
   → Example output format:
     "Found 2 nodes in the cluster:
     
-    k8s-master-001:
+    k8s-master-01:
       NetworkUnavailable = False (Reason: FlannelIsUp | Message: Flannel is running on this node)
       MemoryPressure = False (Reason: KubeletHasSufficientMemory | Message: kubelet has sufficient memory available)
       DiskPressure = False (Reason: KubeletHasNoDiskPressure | Message: kubelet has no disk pressure)

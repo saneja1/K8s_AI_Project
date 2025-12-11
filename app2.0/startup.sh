@@ -4,7 +4,7 @@
 # Usage: ./manage_app.sh {start|stop|restart|status}
 
 APP_NAME="flask_app2.0"
-APP_DIR="/home/K8s_AI_Project/app2.0"
+APP_DIR="/home/saneja/K8s_AI_Project/app2.0"
 PID_FILE="$APP_DIR/app.pid"
 LOG_FILE="$APP_DIR/app.log"
 PYTHON_APP="app.py"

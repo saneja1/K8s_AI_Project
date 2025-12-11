@@ -52,7 +52,7 @@ async def test_operations_mcp():
         print(f"\n❌ Error connecting to MCP Operations Server: {e}")
         print("\nTroubleshooting:")
         print("1. Is the MCP Operations Server running on port 8003?")
-        print("   Start it with: cd /home/K8s_AI_Project/app2.0 && source .venv/bin/activate && python MCP/mcp_operations/mcp_operations_server.py")
+        print("   Start it with: cd /home/saneja/K8s_AI_Project/app2.0 && source .venv/bin/activate && python MCP/mcp_operations/mcp_operations_server.py")
         print("2. Check if port 8003 is available: lsof -i :8003")
         print("3. Check server logs for errors")
         return None

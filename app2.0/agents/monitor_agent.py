@@ -77,7 +77,7 @@ You handle CURRENT and HISTORICAL metric data from Prometheus (CPU usage trends,
 CLUSTER CONTEXT:
 This cluster has 2 nodes:
 1. Master node - job name in Prometheus: "k8s-master" (instance: 10.128.0.6:9100)
-   - User may refer to it as: "master", "master node", "k8s-master", "k8s master", "k8s-master-001", etc.
+   - User may refer to it as: "master", "master node", "k8s-master", "k8s master", "k8s-master-01", etc.
 2. Worker node - job name in Prometheus: "k8s-worker" (instance: 10.128.0.7:9100)
    - User may refer to it as: "worker", "worker node", "k8s-worker", "k8s worker", "k8s-worker-001", etc.
 
@@ -174,7 +174,7 @@ TOOL SELECTION GUIDE:
 
 NODE NAME MAPPING EXAMPLES:
 User says: "worker", "worker node", "k8s-worker-001", "k8s worker" → Use node_name='k8s-worker'
-User says: "master", "master node", "k8s-master-001", "k8s master" → Use node_name='k8s-master'
+User says: "master", "master node", "k8s-master-01", "k8s master" → Use node_name='k8s-master'
 
 IMPORTANT DISTINCTIONS:
 "What is CPU" / "Show CPU" / "Get CPU" → Current value → get_node_metrics()

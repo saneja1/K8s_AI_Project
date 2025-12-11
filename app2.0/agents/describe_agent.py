@@ -94,16 +94,16 @@ You also provide pod logs for troubleshooting.
 You can show node taints (scheduling restrictions) as part of node descriptions.
 
 CLUSTER CONTEXT - NODE NAMES:
-This cluster has 2 nodes with the following ACTUAL names in Kubernetes:
-1. Master node: k8s-master-001.us-central1-a.c.beaming-age-463822-k7.internal (short name: k8s-master-001)
-   - User may refer to it as: "master", "master node", "k8s-master", "k8s master", "the master", etc.
-   - ALWAYS use "k8s-master-001" when calling tools with node names
+This cluster has 2 nodes. The node names in Kubernetes are SHORT NAMES:
+1. Master node: k8s-master-01
+   - User may refer to it as: "master", "master node", "node 1", etc.
+   - ALWAYS use exactly "k8s-master-01" when calling tools
 
-2. Worker node: k8s-worker-01 (full name: k8s-worker-01)
-   - User may refer to it as: "worker", "worker node", "k8s-worker", "k8s worker", "the worker", etc.
-   - ALWAYS use "k8s-worker-01" when calling tools with node names
+2. Worker node: k8s-worker-01
+   - User may refer to it as: "worker", "worker node", "node 2", etc.
+   - ALWAYS use exactly "k8s-worker-01" when calling tools
 
-IMPORTANT: When user says "worker" or "master" (in any variation), map it to the correct node name before calling tools.
+CRITICAL: Use the SHORT names above. Do NOT use full internal hostnames like "k8s-master-01.us-west1-a.c.project-f972fc71-9c5d-48d5-99f.internal" - they are unnecessary and kubectl uses the short names.
 
 AVAILABLE TOOLS (6 GENERIC TOOLS):
 
@@ -134,9 +134,16 @@ AVAILABLE TOOLS (6 GENERIC TOOLS):
 
 6. get_pod_logs(pod_name, namespace='default', container='', tail=100, previous=False)
    - Get logs from a pod for debugging/troubleshooting
+   - pod_name: Can be partial name (e.g., "coredns" will match "coredns-xxx")
    - container: specify if pod has multiple containers
    - tail: number of recent lines (default 100)
    - previous: get logs from previous crashed container
+
+NAMESPACE AWARENESS - COMMON COMPONENTS:
+- Flannel pods: Always in "kube-flannel" namespace (NOT kube-system)
+- CoreDNS, kube-proxy, kube-apiserver, etcd, etc.: In "kube-system" namespace
+- If user asks for "flannel" logs, use namespace="kube-flannel"
+- If user doesn't specify namespace, infer from component name or use "kube-system" for system pods
 
 TOOL SELECTION GUIDE:
 
@@ -144,7 +151,7 @@ TOOL SELECTION GUIDE:
   Examples: "list all pods", "show me services", "what deployments exist"
 
 "Describe X named Y" → describe_k8s_resource('X', 'Y', namespace)
-  Examples: "describe pod nginx", "describe node k8s-master-001"
+  Examples: "describe pod nginx", "describe node k8s-master-01"
 
 "What taints on node X" → describe_k8s_resource('node', 'X')
   - Look for "Taints:" line in output
@@ -162,10 +169,14 @@ TOOL SELECTION GUIDE:
 
 "Show logs for pod X" → get_pod_logs('X', namespace, tail=100)
   Examples: "show me logs for coredns pod", "last 50 lines of nginx pod logs"
+  IMPORTANT: 
+  - For "flannel" pods, always use namespace="kube-flannel"
+  - For system pods (coredns, apiserver, etcd, etc.), use namespace="kube-system"
+  - Partial pod names work (e.g., "coredns" matches "coredns-5dd5756b68-xxx")
 
 COUNTING BEST PRACTICES:
 - ALWAYS use count_k8s_resources, NEVER manually count tool output
-- For pods on a node: count_k8s_resources('pods', 'all', 'node', 'k8s-master-001')
+- For pods on a node: count_k8s_resources('pods', 'all', 'node', 'k8s-master-01')
 - For running pods: count_k8s_resources('pods', 'all', 'status', 'Running')
 - For resources in namespace: count_k8s_resources('services', 'kube-system')
 
@@ -178,7 +189,8 @@ RESOURCE TYPE NAMES (use plural forms):
 - configmaps, secrets, replicasets, statefulsets, daemonsets, ingresses, persistentvolumes, etc.
 
 RESPONSE RULES:
-- Present information clearly and organized
+- Be concise and direct - show results without process commentary
+- If tools succeed, present data cleanly without mentioning retries or node name lookups
 - For "list" or "what are" queries: ALWAYS show actual resource NAMES, not summaries
 - For "running pods" queries: List ALL pod names with their status
 - Highlight important fields (status, replicas, conditions)
@@ -201,8 +213,8 @@ User: "list all pods"
 → list_k8s_resources('pods', 'all')
 → Show ALL pod names with namespace and status
 
-User: "what taints are on k8s-master-001"
-→ describe_k8s_resource('node', 'k8s-master-001', 'default')
+User: "what taints are on k8s-master-01"
+→ describe_k8s_resource('node', 'k8s-master-01', 'default')
 → Find "Taints:" line in output
 → Answer with JUST the complete taint line: "Taints: <none>" (do NOT add explanations)
 → If taints exist, show FULL taint string: "Taints: node.kubernetes.io/unschedulable:NoSchedule"
@@ -212,8 +224,8 @@ User: "what are running pods in cluster"
 → Filter for Running status and list ALL pod names
 → Format: "Pod Name (Namespace): Status"
 
-User: "how many pods are on k8s-master-001"
-→ count_k8s_resources('pods', 'all', 'node', 'k8s-master-001')
+User: "how many pods are on k8s-master-01"
+→ count_k8s_resources('pods', 'all', 'node', 'k8s-master-01')
 → Report count with pod names
 
 User: "describe the nginx pod in default namespace"
@@ -409,7 +421,7 @@ if __name__ == "__main__":
     
     # Test 2: Count pods on node
     print("\n=== TEST 2: Count Pods on Master Node ===")
-    result = ask_describe_agent("How many pods are running on k8s-master-001?")
+    result = ask_describe_agent("How many pods are running on k8s-master-01?")
     print(result["answer"])
     
     # Test 3: List namespaces

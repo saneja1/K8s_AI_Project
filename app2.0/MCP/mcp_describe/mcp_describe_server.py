@@ -62,8 +62,8 @@ def list_k8s_resources(resource_type: str, namespace: str = "all") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get {resource_type} -n {namespace} -o wide"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
@@ -104,8 +104,8 @@ def describe_k8s_resource(resource_type: str, resource_name: str, namespace: str
                 list_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o name"
             
             list_result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={list_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
@@ -126,8 +126,8 @@ def describe_k8s_resource(resource_type: str, resource_name: str, namespace: str
             full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe {resource_type} {resource_name} -n {namespace}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=8)
@@ -168,8 +168,8 @@ def count_k8s_resources(resource_type: str, namespace: str = "all", filter_by: s
         
         # Execute command
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=8)
@@ -262,8 +262,8 @@ def get_all_resources_in_namespace(namespace: str = "default") -> str:
             full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get all -n {namespace} -o wide"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
@@ -303,8 +303,8 @@ def get_resource_yaml(resource_type: str, resource_name: str, namespace: str = "
             full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get {resource_type} {resource_name} -n {namespace} -o yaml"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=8)
@@ -323,7 +323,7 @@ def get_pod_logs(pod_name: str, namespace: str = "default", container: str = "",
     Get logs from a pod (useful for debugging and troubleshooting).
     
     Args:
-        pod_name: Name of the pod
+        pod_name: Name of the pod (can be partial, will auto-match)
         namespace: Namespace of the pod (default: "default")
         container: Specific container name (optional, if pod has multiple containers)
         tail: Number of recent log lines to show (default: 100)
@@ -333,8 +333,26 @@ def get_pod_logs(pod_name: str, namespace: str = "default", container: str = "",
         String with pod logs
     """
     try:
+        # Auto-detect full pod name (partial name matching)
+        list_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o name"
+        
+        list_result = subprocess.run([
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
+            f"--command={list_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=8)
+        
+        full_pod_name = pod_name
+        if list_result.returncode == 0:
+            for line in list_result.stdout.splitlines():
+                pod_full = line.replace("pod/", "")
+                if pod_name in pod_full:
+                    full_pod_name = pod_full
+                    break
+        
         # Build command
-        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs {pod_name} -n {namespace} --tail={tail}"
+        full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl logs {full_pod_name} -n {namespace} --tail={tail}"
         
         if container:
             full_command += f" -c {container}"
@@ -343,8 +361,8 @@ def get_pod_logs(pod_name: str, namespace: str = "default", container: str = "",
             full_command += " --previous"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-            "--zone=us-central1-a",
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
         ], capture_output=True, text=True, timeout=15)  # Longer timeout for logs

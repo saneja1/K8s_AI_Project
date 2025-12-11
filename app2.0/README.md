@@ -780,7 +780,7 @@ SHOW_ROUTING=1 python3 cli.py -q "your complex query"
 
 #### Start All Services
 ```bash
-cd /home/K8s_AI_Project/app2.0
+cd /home/saneja/K8s_AI_Project/app2.0
 ./startup.sh start
 
 # Output:
@@ -901,7 +901,7 @@ Supervisor → Agents → MCP Clients → MCP Servers → Tools
 
 ```bash
 # Navigate to app2.0 folder
-cd /home/K8s_AI_Project/app2.0
+cd /home/saneja/K8s_AI_Project/app2.0
 
 # Activate virtual environment  
 source .venv/bin/activate

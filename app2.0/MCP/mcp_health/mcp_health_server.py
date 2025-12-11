@@ -38,8 +38,8 @@ def get_cluster_nodes() -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
@@ -71,8 +71,8 @@ def describe_node(node_name: str = "all") -> str:
                 full_command = f"""sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o json | jq -r '"\\(.metadata.name):", "Taints: " + (if (.spec.taints | length) > 0 then (.spec.taints | map("\\(.key)=\\(.value):\\(.effect)") | join(", ")) else "<none>" end), (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
@@ -109,8 +109,8 @@ def get_cluster_events(namespace: str = "all", minutes: int = 10) -> str:
             full_command += f" -o json | jq -r '.items | map(select(.lastTimestamp != null and (now - ((.lastTimestamp | fromdateiso8601))) < {minutes * 60})) | if length == 0 then \"No recent events found in the last {minutes} minutes. Cluster is operating normally.\" else (map(\"\\(.lastTimestamp) | \\(.metadata.namespace) | \\(.type) | \\(.reason) | \\(.message)\") | join(\"\\n\")) end'"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "swinvm15@k8s-master-001",
-                "--zone=us-central1-a",
+                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
             ], capture_output=True, text=True, timeout=8)
