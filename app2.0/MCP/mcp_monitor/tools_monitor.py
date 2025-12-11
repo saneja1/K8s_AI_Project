@@ -10,7 +10,7 @@ from langchain_core.tools import tool
 
 
 # Prometheus configuration
-PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://34.59.188.124:9090')
+PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://35.233.152.108:9090')
 PROMETHEUS_TIMEOUT = 10
 
 
