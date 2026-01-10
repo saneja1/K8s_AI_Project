@@ -531,6 +531,7 @@ dashboard_template = """
                     <li><a href="/vm-status" class="{{ 'active' if page == 'vm-status' else '' }}">VM Status</a></li>
                     <li><a href="/pod-monitor" class="{{ 'active' if page == 'pod-monitor' else '' }}">Pod Monitor</a></li>
                     <li><a href="/docs" class="{{ 'active' if page == 'docs' else '' }}">Docs</a></li>
+                    <li><a href="/faq" class="{{ 'active' if page == 'faq' else '' }}">FAQ</a></li>
                 </ul>
             </nav>
             <button id="themeToggle" onclick="toggleTheme()" style="
@@ -2013,6 +2014,193 @@ cd /home/saneja/K8s_AI_Project/app2.0
     return render_template_string(dashboard_template,
                                 title="Documentation - Kubernetes AI Dashboard",
                                 page="docs",
+                                page_title="",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/faq')
+def faq():
+    content = """
+    <div style="margin: -120px -40px -70px -40px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; text-align: center;">
+            <h2 style="margin: 0; font-size: 2rem; font-weight: 600; color: white;">❓ Frequently Asked Questions</h2>
+            <p style="margin: 15px 0 0 0; opacity: 0.95; font-size: 1.1rem; color: white;">Everything you need to know about the Kubernetes AI Dashboard</p>
+        </div>
+        
+        <div style="padding: 40px; background: white; max-width: 1200px; margin: 0 auto;">
+            
+            <!-- FAQ 1 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                <h3 style="color: #667eea; margin: 0 0 10px 0; font-size: 1.2rem;">1. What is the Kubernetes AI Dashboard?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    A web application that helps you manage and monitor your Kubernetes cluster using AI. 
+                    Instead of typing complex commands, you can ask questions in plain English and get instant answers. 
+                    It combines monitoring, server validation, and pod management in one place.
+                </p>
+            </div>
+            
+            <!-- FAQ 2 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4CAF50;">
+                <h3 style="color: #4CAF50; margin: 0 0 10px 0; font-size: 1.2rem;">2. How do I use the dashboard?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    Simply open it in your web browser after starting the application. The dashboard has different sections you can click through - 
+                    an AI assistant, server validator, VM monitoring, and pod tracking. Everything is accessible through the navigation menu at the top.
+                </p>
+            </div>
+            
+            <!-- FAQ 3 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FF9800;">
+                <h3 style="color: #FF9800; margin: 0 0 10px 0; font-size: 1.2rem;">3. What is the AI Assistant?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    An intelligent chat interface that answers questions about your Kubernetes cluster. 
+                    Just type your question in plain English, and the AI will figure out what you need and provide the answer. 
+                    It understands questions about cluster health, resources, operations, and monitoring.
+                </p>
+            </div>
+            
+            <!-- FAQ 4 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196F3;">
+                <h3 style="color: #2196F3; margin: 0 0 10px 0; font-size: 1.2rem;">4. How does the AI understand my questions?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    The AI analyzes your question and determines what type of information you need. It then routes your question to specialized agents 
+                    that focus on specific tasks - like checking health, monitoring resources, or making changes. These agents work together to provide you with accurate answers.
+                </p>
+            </div>
+            
+            <!-- FAQ 5 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #9C27B0;">
+                <h3 style="color: #9C27B0; margin: 0 0 10px 0; font-size: 1.2rem;">5. What are specialized agents?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0 0 10px 0;">
+                    Think of agents as expert team members. Each agent specializes in a specific area:
+                </p>
+                <ul style="line-height: 1.7; color: #4a5568; margin: 0; padding-left: 25px; font-size: 0.95rem;">
+                    <li><strong>Health Agent:</strong> Checks if your nodes and cluster are healthy</li>
+                    <li><strong>Describe Agent:</strong> Shows details about your resources and pods</li>
+                    <li><strong>Resources Agent:</strong> Tracks CPU, memory, and storage usage</li>
+                    <li><strong>Operations Agent:</strong> Helps you scale, restart, or modify resources</li>
+                    <li><strong>Monitor Agent:</strong> Analyzes performance metrics and trends</li>
+                </ul>
+            </div>
+            
+            <!-- FAQ 6 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                <h3 style="color: #667eea; margin: 0 0 10px 0; font-size: 1.2rem;">6. What is the Host Validator?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    A tool that checks if a server has enough resources to join your Kubernetes cluster. 
+                    It verifies that the server has sufficient CPU, memory, and disk space before you add it to your cluster. 
+                    This prevents problems caused by underpowered servers.
+                </p>
+            </div>
+            
+            <!-- FAQ 7 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4CAF50;">
+                <h3 style="color: #4CAF50; margin: 0 0 10px 0; font-size: 1.2rem;">7. What does VM Status show?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    This page shows real-time information about your virtual machines. You can see CPU usage, memory consumption, disk space, 
+                    and whether each VM is functioning properly. It helps you quickly identify which machines might need attention.
+                </p>
+            </div>
+            
+            <!-- FAQ 8 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FF9800;">
+                <h3 style="color: #FF9800; margin: 0 0 10px 0; font-size: 1.2rem;">8. What is the Pod Monitor?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    A live view of all your Kubernetes pods. It shows which pods are running, failing, or pending, along with their status, 
+                    restart counts, and age. This helps you quickly spot and troubleshoot any pod issues in your cluster.
+                </p>
+            </div>
+            
+            <!-- FAQ 9 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196F3;">
+                <h3 style="color: #2196F3; margin: 0 0 10px 0; font-size: 1.2rem;">9. What questions can I ask the AI?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0 0 10px 0;">
+                    You can ask questions in everyday language. Examples:
+                </p>
+                <ul style="line-height: 1.7; color: #4a5568; margin: 0; padding-left: 25px; font-size: 0.95rem;">
+                    <li>"Show me all pods"</li>
+                    <li>"What's the CPU usage on my nodes?"</li>
+                    <li>"Scale my nginx deployment to 3 instances"</li>
+                    <li>"Which pod is using the most memory?"</li>
+                    <li>"Are there any unhealthy pods?"</li>
+                </ul>
+            </div>
+            
+            <!-- FAQ 10 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #9C27B0;">
+                <h3 style="color: #9C27B0; margin: 0 0 10px 0; font-size: 1.2rem;">10. Can the AI make changes to my cluster?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    Yes, but safely. The AI can help you scale deployments, restart pods, or delete resources when you ask it to. 
+                    These operations are performed carefully and all changes are logged so you can track what was done.
+                </p>
+            </div>
+            
+            <!-- FAQ 11 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                <h3 style="color: #667eea; margin: 0 0 10px 0; font-size: 1.2rem;">11. What's the difference between real-time usage and configured limits?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    <strong>Real-time usage</strong> shows what's actually happening right now - how much CPU or memory a pod is currently using. 
+                    <strong>Configured limits</strong> show what you've set as the maximum a pod is allowed to use. 
+                    The AI can tell you either depending on what you ask.
+                </p>
+            </div>
+            
+            <!-- FAQ 12 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4CAF50;">
+                <h3 style="color: #4CAF50; margin: 0 0 10px 0; font-size: 1.2rem;">12. Is this dashboard beginner-friendly?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    Absolutely! You don't need to be a Kubernetes expert. The dashboard translates your plain English questions into technical commands, 
+                    and presents results in an easy-to-understand format. It's designed to help both beginners and experts manage their clusters efficiently.
+                </p>
+            </div>
+            
+            <!-- FAQ 13 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FF9800;">
+                <h3 style="color: #FF9800; margin: 0 0 10px 0; font-size: 1.2rem;">13. How does the dashboard monitor performance?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    The dashboard collects metrics from your cluster continuously - things like CPU usage, memory consumption, disk activity, and network traffic. 
+                    It can show you current values or historical trends, helping you understand your cluster's performance over time.
+                </p>
+            </div>
+            
+            <!-- FAQ 14 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196F3;">
+                <h3 style="color: #2196F3; margin: 0 0 10px 0; font-size: 1.2rem;">14. Can I see what happened in the past?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    Yes! You can ask for historical data like "Show CPU usage for the last hour" or "What were the top 5 pods using memory yesterday?" 
+                    The dashboard keeps track of metrics over time so you can analyze trends and troubleshoot issues.
+                </p>
+            </div>
+            
+            <!-- FAQ 15 -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #9C27B0;">
+                <h3 style="color: #9C27B0; margin: 0 0 10px 0; font-size: 1.2rem;">15. What makes this different from other Kubernetes tools?</h3>
+                <p style="line-height: 1.7; color: #4a5568; margin: 0;">
+                    Instead of memorizing commands or navigating complex interfaces, you simply have a conversation with the AI. 
+                    It combines monitoring, troubleshooting, and operations in one intelligent interface that understands natural language. 
+                    Everything you need is in one place, accessible through simple questions.
+                </p>
+            </div>
+            
+            <!-- Need More Help Section -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px; text-align: center; margin-top: 40px;">
+                <h3 style="margin: 0 0 15px 0; color: white;">📚 Need More Help?</h3>
+                <p style="line-height: 1.8; margin: 0 0 20px 0; opacity: 0.95; color: white;">
+                    Check out our comprehensive documentation for detailed guides, architecture diagrams, and examples.
+                </p>
+                <a href="/docs" style="display: inline-block; background: #4a5fd9; color: white; padding: 12px 30px; border-radius: 6px; text-decoration: none; font-weight: 600; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" 
+                   onmouseover="this.style.background='#3d4fc7'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)'" 
+                   onmouseout="this.style.background='#4a5fd9'; this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)'">
+                    View Documentation →
+                </a>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return render_template_string(dashboard_template,
+                                title="FAQ - Kubernetes AI Dashboard",
+                                page="faq",
                                 page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
