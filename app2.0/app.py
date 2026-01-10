@@ -1886,7 +1886,7 @@ def docs():
                 <section id="setup" style="margin-bottom: 50px;">
                     <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">⚙️ Installation & Setup</h2>
                     <h3 style="color: #4a5568;">Prerequisites</h3>
-                    <pre style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; overflow-x: auto;">
+                    <pre style="background: white; color: black; padding: 20px; border-radius: 8px; overflow-x: auto; border: 1px solid #e2e8f0;">
 Python 3.12+
 Virtual environment (.venv)
 Graphviz (system package)
@@ -1894,7 +1894,7 @@ Google Cloud SDK (for cluster access)
                     </pre>
                     
                     <h3 style="color: #4a5568; margin-top: 30px;">Starting the Dashboard</h3>
-                    <pre style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; overflow-x: auto;">
+                    <pre style="background: white; color: black; padding: 20px; border-radius: 8px; overflow-x: auto; border: 1px solid #e2e8f0;">
 cd /home/saneja/K8s_AI_Project/app2.0
 ./startup.sh start
                     </pre>
@@ -1982,7 +1982,7 @@ cd /home/saneja/K8s_AI_Project/app2.0
                 
                 <section id="endpoints" style="margin-bottom: 50px;">
                     <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">🌐 API Endpoints</h2>
-                    <div style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; font-family: monospace; margin: 20px 0;">
+                    <div style="background: white; color: black; padding: 20px; border-radius: 8px; font-family: monospace; margin: 20px 0; border: 1px solid #e2e8f0;">
                         <div style="margin-bottom: 15px;">
                             <strong style="color: #4CAF50;">POST</strong> /api/chat - Send query to AI assistant
                         </div>
