@@ -4,6 +4,7 @@ import subprocess
 import json
 import os
 from dotenv import load_dotenv
+import graphviz
 
 # Load environment variables
 load_dotenv()
@@ -2022,47 +2023,47 @@ def docs_full_architecture():
     """Full Architecture documentation subpage."""
     import graphviz
     
-    # Create the main architecture diagram
+    # Create the main architecture diagram - Compact version for web display
     dot = graphviz.Digraph(comment='K8s Multi-Agent Architecture')
-    dot.attr(rankdir='TB', splines='ortho', nodesep='0.3', ranksep='0.5', bgcolor='white')
-    dot.attr('node', shape='box', style='rounded,filled', fontname='Arial', fontsize='8', margin='0.15')
-    dot.attr('edge', fontname='Arial', fontsize='7', color='#666666')
+    dot.attr(rankdir='TB', splines='ortho', nodesep='0.35', ranksep='0.6', bgcolor='white')
+    dot.attr('node', shape='box', style='rounded,filled', fontname='Arial', fontsize='9', margin='0.2')
+    dot.attr('edge', fontname='Arial', fontsize='8', color='#666666')
     
     # User Layer
     with dot.subgraph(name='cluster_user') as c:
         c.attr(label='👤 USER INTERFACE', style='filled,rounded', color='#E3F2FD', fontsize='11', fontname='Arial Bold', labeljust='l')
-        c.node('CLI', '🖥️ CLI\n(cli.py)\nCommand: python cli.py -q "query"', fillcolor='#BBDEFB', shape='box', width='2')
-        c.node('WebUI', '🌐 Web UI\n(Flask:7000)\nBrowser Interface', fillcolor='#BBDEFB', shape='box', width='2')
+        c.node('CLI', '🖥️ CLI\n(cli.py)\nCommand: python cli.py -q "query"', fillcolor='#BBDEFB', shape='box', width='2.2')
+        c.node('WebUI', '🌐 Web UI\n(Flask app.py:7000)\nBrowser Interface', fillcolor='#BBDEFB', shape='box', width='2.2')
     
     # Supervisor Layer with routing logic
     with dot.subgraph(name='cluster_supervisor') as c:
-        c.attr(label='🎯 SUPERVISOR (LangGraph + Claude 4.5)', style='filled,rounded', color='#C8E6C9', fontsize='11', fontname='Arial Bold', labeljust='l')
-        c.node('Supervisor', '''🎯 Supervisor Agent\nAnalyzes & Routes Query\nCalls Multiple Agents''', 
-               fillcolor='#A5D6A7', shape='box', style='rounded,filled,bold', width='3')
+        c.attr(label='🎯 SUPERVISOR (LangGraph + Claude Sonnet 4.5)', style='filled,rounded', color='#C8E6C9', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('Supervisor', '''🎯 Supervisor Agent\nRouting Logic:\n• Analyzes query keywords\n• Checks agent capabilities\n• Routes to best agent\n• Can call multiple agents''', 
+               fillcolor='#A5D6A7', shape='box', style='rounded,filled,bold', width='3.5')
     
     # Agent Layer
     with dot.subgraph(name='cluster_agents') as c:
-        c.attr(label='🤖 SPECIALIZED AGENTS', style='filled,rounded', color='#FFF9C4', fontsize='11', fontname='Arial Bold', labeljust='l')
-        c.node('HealthAgent', '''❤️ Health\nhealth, status,\nreadiness''', fillcolor='#FFF59D', width='1.5', height='0.8')
-        c.node('DescribeAgent', '''📋 Describe\ndescribe, get,\nshow details''', fillcolor='#FFF59D', width='1.5', height='0.8')
-        c.node('ResourcesAgent', '''📊 Resources\ncapacity, limits,\nquotas''', fillcolor='#FFF59D', width='1.5', height='0.8')
-        c.node('OperationsAgent', '''⚙️ Operations\ncreate, delete,\nscale, apply''', fillcolor='#FFF59D', width='1.5', height='0.8')
-        c.node('MonitorAgent', '''📈 Monitor\nmetrics, CPU,\nmemory''', fillcolor='#FFF59D', width='1.5', height='0.8')
+        c.attr(label='🤖 SPECIALIZED AGENTS (Each has LangGraph workflow)', style='filled,rounded', color='#FFF9C4', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('HealthAgent', '''❤️ Health Agent\nHandles: health, status,\nready, liveness checks''', fillcolor='#FFF59D', width='1.8', height='0.9')
+        c.node('DescribeAgent', '''📋 Describe Agent\nHandles: describe, get,\nshow details, config''', fillcolor='#FFF59D', width='1.8', height='0.9')
+        c.node('ResourcesAgent', '''📊 Resources Agent\nHandles: capacity, limits,\nquotas, allocations''', fillcolor='#FFF59D', width='1.8', height='0.9')
+        c.node('OperationsAgent', '''⚙️ Operations Agent\nHandles: create, delete,\nscale, apply, patch''', fillcolor='#FFF59D', width='1.8', height='0.9')
+        c.node('MonitorAgent', '''📈 Monitor Agent\nHandles: metrics, CPU,\nmemory, Prometheus''', fillcolor='#FFF59D', width='1.8', height='0.9')
     
     # MCP Server Layer
     with dot.subgraph(name='cluster_mcp') as c:
-        c.attr(label='🔌 MCP SERVERS (FastMCP)', style='filled,rounded', color='#FFCDD2', fontsize='11', fontname='Arial Bold', labeljust='l')
-        c.node('MCP_Health', '''🔌 Health\n:8000\ncheck_pod_health''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
-        c.node('MCP_Describe', '''🔌 Describe\n:8002\ndescribe_resource''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
-        c.node('MCP_Resources', '''🔌 Resources\n:8001\nget_node_resources''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
-        c.node('MCP_Operations', '''🔌 Operations\n:8003\nscale_deployment''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
-        c.node('MCP_Monitor', '''🔌 Monitor\n:8004\nquery_prometheus''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+        c.attr(label='🔌 MCP SERVERS (FastMCP - Model Context Protocol)', style='filled,rounded', color='#FFCDD2', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('MCP_Health', '''🔌 Health MCP\n:8000\nTools:\n• check_pod_health\n• check_readiness''', fillcolor='#EF9A9A', shape='component', width='1.8', height='0.9')
+        c.node('MCP_Describe', '''🔌 Describe MCP\n:8002\nTools:\n• describe_resource\n• get_yaml''', fillcolor='#EF9A9A', shape='component', width='1.8', height='0.9')
+        c.node('MCP_Resources', '''🔌 Resources MCP\n:8001\nTools:\n• get_node_resources\n• get_pod_resources''', fillcolor='#EF9A9A', shape='component', width='1.8', height='0.9')
+        c.node('MCP_Operations', '''🔌 Operations MCP\n:8003\nTools:\n• scale_deployment\n• create_resource''', fillcolor='#EF9A9A', shape='component', width='1.8', height='0.9')
+        c.node('MCP_Monitor', '''🔌 Monitor MCP\n:8004\nTools:\n• query_prometheus\n• get_metrics''', fillcolor='#EF9A9A', shape='component', width='1.8', height='0.9')
     
     # Data Source Layer
     with dot.subgraph(name='cluster_sources') as c:
         c.attr(label='💾 DATA SOURCES', style='filled,rounded', color='#E1BEE7', fontsize='11', fontname='Arial Bold', labeljust='l')
-        c.node('K8s', '''☸️ Kubernetes\nMaster: 10.138.0.2\nWorker: 10.138.0.3\nSSH + kubectl''', fillcolor='#CE93D8', shape='cylinder', width='2.5', height='1.2')
-        c.node('Prometheus', '''📊 Prometheus\n35.233.152.108:9090\nnode_exporter\ncAdvisor''', fillcolor='#CE93D8', shape='cylinder', width='2.5', height='1.2')
+        c.node('K8s', '''☸️ Kubernetes Cluster\nMaster: k8s-master-01 (10.138.0.2)\nWorker: k8s-worker-01 (10.138.0.3)\nAccess: SSH + kubectl commands''', fillcolor='#CE93D8', shape='cylinder', width='2.8', height='1.1')
+        c.node('Prometheus', '''📊 Prometheus Server\nVM: prometheus-monitoring-01\nURL: http://35.233.152.108:9090\nData: node_exporter, cAdvisor,\nkube-state-metrics''', fillcolor='#CE93D8', shape='cylinder', width='2.8', height='1.1')
     
     # User to Supervisor edges
     dot.edge('CLI', 'Supervisor', label=' Query String ', color='#2196F3', penwidth='1.5', fontcolor='#2196F3')
@@ -2072,7 +2073,7 @@ def docs_full_architecture():
     dot.edge('Supervisor', 'HealthAgent', label=' "health" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
     dot.edge('Supervisor', 'DescribeAgent', label=' "describe" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
     dot.edge('Supervisor', 'ResourcesAgent', label=' "resources" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
-    dot.edge('Supervisor', 'OperationsAgent', label=' "scale" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    dot.edge('Supervisor', 'OperationsAgent', label=' "scale/create" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
     dot.edge('Supervisor', 'MonitorAgent', label=' "metrics" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
     
     # Agents to MCP Servers
@@ -2083,19 +2084,39 @@ def docs_full_architecture():
     dot.edge('MonitorAgent', 'MCP_Monitor', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
     
     # MCP Servers to Data Sources
-    dot.edge('MCP_Health', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
-    dot.edge('MCP_Describe', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
-    dot.edge('MCP_Resources', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
-    dot.edge('MCP_Operations', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
-    dot.edge('MCP_Monitor', 'Prometheus', label=' HTTP GET\nPromQL ', color='#F44336', penwidth='1.5', style='dotted', fontcolor='#F44336')
+    dot.edge('MCP_Health', 'K8s', label=' SSH\nkubectl get pods ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Describe', 'K8s', label=' SSH\nkubectl describe ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Resources', 'K8s', label=' SSH\nkubectl get nodes ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Operations', 'K8s', label=' SSH\nkubectl scale/apply ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Monitor', 'Prometheus', label=' HTTP GET\nPromQL Query ', color='#F44336', penwidth='1.5', style='dotted', fontcolor='#F44336')
     
     # Generate SVG
     svg_graph = dot.pipe(format='svg').decode('utf-8')
     
     content = f"""
-    <div class="container-fluid" style="max-width: 98%; padding: 0 20px;">
+    <style>
+        /* Full width container only for architecture page */
+        .architecture-full-width {{
+            max-width: 100% !important;
+            width: 100% !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+        }}
+        .architecture-diagram {{
+            width: 100%;
+            height: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+        .architecture-diagram svg {{
+            max-width: 100%;
+            height: auto;
+        }}
+    </style>
+    <div class="container-fluid architecture-full-width">
         <div class="row">
-            <div class="col-12">
+            <div class="col-12"
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <div>
                         <h2 style="color: #1a73e8; margin-bottom: 5px;">📊 Full Architecture</h2>
@@ -2117,12 +2138,8 @@ def docs_full_architecture():
                         Complete System Architecture
                     </h3>
                     
-                    <div style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 10px; width: 100%;">
-                        <div style="width: 100%; overflow: hidden;">
-                            <div style="transform-origin: top center; max-width: 100%;">
-                                {svg_graph}
-                            </div>
-                        </div>
+                    <div class="architecture-diagram" style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 10px; width: 100%; overflow: hidden;">
+                        {svg_graph}
                     </div>
                     
                     <div style="margin-top: 30px;">
@@ -2214,6 +2231,84 @@ def docs_full_architecture():
                             <li><strong>Response flows back:</strong> Data sources → MCP → Agent → Supervisor → User</li>
                         </ol>
                     </div>
+                    
+                    <div style="margin-top: 40px;">
+                        <h3 style="color: #333; margin-bottom: 25px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">
+                            🔗 MCP Protocol Communication
+                        </h3>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div style="background: #f8f9fa; color: #333; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6;">
+                                    <h5 style="color: #1a73e8; margin-bottom: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 8px;">1️⃣ Agent → MCP Server</h5>
+                                    <pre style="background: #ffffff; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 0; border: 1px solid #dee2e6;"><code style="color: #212529;">POST http://localhost:8000/mcp
+Content-Type: application/json
+
+{{
+  "method": "tools/call",
+  "params": {{
+    "name": "check_pod_health",
+    "arguments": {{
+      "namespace": "kube-system"
+    }}
+  }}
+}}</code></pre>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div style="background: #f8f9fa; color: #333; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6;">
+                                    <h5 style="color: #1a73e8; margin-bottom: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 8px;">2️⃣ MCP Server → K8s/Prometheus</h5>
+                                    <pre style="background: #ffffff; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 0; border: 1px solid #dee2e6;"><code style="color: #212529;"># For Kubernetes tools:
+SSH pggo890@k8s-master-01
+→ kubectl get pods -n kube-system -o json
+
+# For Prometheus tools:
+GET http://35.233.152.108:9090/api/v1/query
+→ ?query=up</code></pre>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-4">
+                                <div style="background: #f8f9fa; color: #333; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6;">
+                                    <h5 style="color: #1a73e8; margin-bottom: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 8px;">3️⃣ MCP Server → Agent</h5>
+                                    <pre style="background: #ffffff; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 0; border: 1px solid #dee2e6;"><code style="color: #212529;">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{{
+  "result": {{
+    "content": [
+      {{
+        "type": "text",
+        "text": "Pod health report..."
+      }}
+    ]
+  }}
+}}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 30px; padding: 25px; background: #d4edda; border-left: 4px solid #28a745; border-radius: 8px;">
+                        <h3 style="color: #155724; margin-bottom: 20px;">🎯 Key Architecture Insights:</h3>
+                        <ol style="margin: 0; padding-left: 25px; line-height: 2; color: #155724;">
+                            <li><strong>Separation of Concerns:</strong> Each agent specializes in one domain (health, operations, monitoring, etc.)</li>
+                            <li><strong>MCP Protocol:</strong> Standardized communication between agents and tools via HTTP/JSON</li>
+                            <li><strong>Multiple Data Sources:</strong> Kubernetes (via SSH + kubectl) and Prometheus (via HTTP API)</li>
+                            <li><strong>Supervisor Pattern:</strong> Single entry point routes queries intelligently to specialized agents</li>
+                            <li><strong>Scalable Design:</strong> Easy to add new agents or tools without modifying existing components</li>
+                        </ol>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 25px; background: #d1ecf1; border-left: 4px solid #0c5460; border-radius: 8px;">
+                        <h4 style="color: #0c5460; margin-bottom: 15px;">💡 Want to see this in action? Try these queries in the CLI:</h4>
+                        <ul style="margin: 0; padding-left: 25px; line-height: 2; color: #0c5460;">
+                            <li><code style="background: #bee5eb; padding: 2px 6px; border-radius: 3px; color: #004085;">"Check health of all pods in kube-system"</code></li>
+                            <li><code style="background: #bee5eb; padding: 2px 6px; border-radius: 3px; color: #004085;">"Show me CPU usage from Prometheus"</code></li>
+                            <li><code style="background: #bee5eb; padding: 2px 6px; border-radius: 3px; color: #004085;">"Scale my deployment to 5 replicas"</code></li>
+                        </ul>
+                    </div>
                 </section>
             </div>
         </div>
@@ -2222,6 +2317,1337 @@ def docs_full_architecture():
     
     return render_template_string(dashboard_template,
                                 title="Full Architecture - Kubernetes AI Dashboard",
+                                page="docs",
+                                page_title="",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/docs/detailed-flow')
+def docs_detailed_flow():
+    """Detailed Flow Examples documentation subpage."""
+    
+    # Create execution flow diagram for Health Agent
+    health_flow = graphviz.Digraph()
+    health_flow.attr(rankdir='TB')
+    health_flow.attr('node', shape='box', style='rounded,filled', fontsize='10', width='3.5')
+    
+    health_flow.node('1', '1. User Query\n"Check pod health in kube-system"', fillcolor='#E3F2FD')
+    health_flow.node('2', '2. Supervisor routes to Health Agent\n(keyword: "health")', fillcolor='#C8E6C9')
+    health_flow.node('3', '3. Agent → MCP Client\nHTTP POST to localhost:8000/mcp', fillcolor='#FFF9C4')
+    health_flow.node('4', '4. MCP Server receives request\nParses tool name & parameters', fillcolor='#FFCDD2')
+    health_flow.node('5', '5. Tool executes:\ngcloud ssh to k8s-master-01', fillcolor='#F8BBD0')
+    health_flow.node('6', '6. Run kubectl command:\nkubectl get pods -n kube-system -o json', fillcolor='#E1BEE7')
+    health_flow.node('7', '7. K8s API returns JSON\nwith pod status, conditions', fillcolor='#D1C4E9')
+    health_flow.node('8', '8. Parse JSON → Extract:\nname, status, ready, restarts', fillcolor='#FFCCBC')
+    health_flow.node('9', '9. MCP Server → MCP Client\nHTTP 200 with health data', fillcolor='#C8E6C9')
+    health_flow.node('10', '10. Agent formats response\nReturns to user', fillcolor='#B2DFDB')
+    
+    health_flow.edge('1', '2', label='query')
+    health_flow.edge('2', '3', label='tool call')
+    health_flow.edge('3', '4', label='HTTP')
+    health_flow.edge('4', '5', label='invoke')
+    health_flow.edge('5', '6', label='SSH')
+    health_flow.edge('6', '7', label='kubectl')
+    health_flow.edge('7', '8', label='JSON')
+    health_flow.edge('8', '9', label='result')
+    health_flow.edge('9', '10', label='response')
+    
+    health_flow_diagram = health_flow.pipe(format='svg').decode('utf-8')
+    
+    # Create execution flow diagram for Describe Agent
+    describe_flow = graphviz.Digraph()
+    describe_flow.attr(rankdir='TB')
+    describe_flow.attr('node', shape='box', style='rounded,filled', fontsize='10', width='3.5')
+    
+    describe_flow.node('1', '1. User Query\n"Describe pod coredns-xxx"', fillcolor='#E3F2FD')
+    describe_flow.node('2', '2. Supervisor routes to Describe Agent\n(keyword: "describe")', fillcolor='#C8E6C9')
+    describe_flow.node('3', '3. Agent → MCP Client\nHTTP POST to localhost:8002/mcp', fillcolor='#FFF9C4')
+    describe_flow.node('4', '4. MCP Server receives request\nExtracts: type=pod, name=coredns-xxx', fillcolor='#FFCDD2')
+    describe_flow.node('5', '5. Tool executes:\ngcloud ssh to k8s-master-01', fillcolor='#F8BBD0')
+    describe_flow.node('6', '6. Run kubectl describe:\nkubectl describe pod coredns-xxx', fillcolor='#E1BEE7')
+    describe_flow.node('7', '7. K8s returns full description:\nspec, status, events', fillcolor='#D1C4E9')
+    describe_flow.node('8', '8. MCP Server formats output\nReturns complete description', fillcolor='#FFCCBC')
+    describe_flow.node('9', '9. Agent receives text\nPasses to Claude for analysis', fillcolor='#C8E6C9')
+    describe_flow.node('10', '10. User gets formatted\nresource description', fillcolor='#B2DFDB')
+    
+    describe_flow.edge('1', '2')
+    describe_flow.edge('2', '3')
+    describe_flow.edge('3', '4')
+    describe_flow.edge('4', '5')
+    describe_flow.edge('5', '6')
+    describe_flow.edge('6', '7')
+    describe_flow.edge('7', '8')
+    describe_flow.edge('8', '9')
+    describe_flow.edge('9', '10')
+    
+    describe_flow_diagram = describe_flow.pipe(format='svg').decode('utf-8')
+    
+    # Create execution flow diagram for Resources Agent
+    resources_flow = graphviz.Digraph()
+    resources_flow.attr(rankdir='TB')
+    resources_flow.attr('node', shape='box', style='rounded,filled', fontsize='10', width='3.5')
+    
+    resources_flow.node('1', '1. User Query\n"Show node resources"', fillcolor='#E3F2FD')
+    resources_flow.node('2', '2. Supervisor routes to Resources Agent\n(keyword: "resources")', fillcolor='#C8E6C9')
+    resources_flow.node('3', '3. Agent → MCP Client\nHTTP POST to localhost:8001/mcp', fillcolor='#FFF9C4')
+    resources_flow.node('4', '4. MCP Server receives request\nPrepares kubectl command', fillcolor='#FFCDD2')
+    resources_flow.node('5', '5. Tool executes:\ngcloud ssh to k8s-master-01', fillcolor='#F8BBD0')
+    resources_flow.node('6', '6. Run: kubectl get nodes -o json\nGet all node specs', fillcolor='#E1BEE7')
+    resources_flow.node('7', '7. K8s returns node data:\ncapacity, allocatable fields', fillcolor='#D1C4E9')
+    resources_flow.node('8', '8. Parse each node:\nextract CPU, memory, storage', fillcolor='#FFCCBC')
+    resources_flow.node('9', '9. MCP Server → Agent\nJSON with resource summary', fillcolor='#C8E6C9')
+    resources_flow.node('10', '10. Agent formats output\nShows capacity vs allocatable', fillcolor='#B2DFDB')
+    
+    resources_flow.edge('1', '2')
+    resources_flow.edge('2', '3')
+    resources_flow.edge('3', '4')
+    resources_flow.edge('4', '5')
+    resources_flow.edge('5', '6')
+    resources_flow.edge('6', '7')
+    resources_flow.edge('7', '8')
+    resources_flow.edge('8', '9')
+    resources_flow.edge('9', '10')
+    
+    resources_flow_diagram = resources_flow.pipe(format='svg').decode('utf-8')
+    
+    # Create execution flow diagram for Operations Agent
+    operations_flow = graphviz.Digraph()
+    operations_flow.attr(rankdir='TB')
+    operations_flow.attr('node', shape='box', style='rounded,filled', fontsize='10', width='3.5')
+    
+    operations_flow.node('1', '1. User Command\n"Scale deployment to 3 replicas"', fillcolor='#E3F2FD')
+    operations_flow.node('2', '2. Supervisor routes to Operations Agent\n(keyword: "scale")', fillcolor='#C8E6C9')
+    operations_flow.node('3', '3. Agent → MCP Client\nHTTP POST to localhost:8003/mcp', fillcolor='#FFF9C4')
+    operations_flow.node('4', '4. MCP Server receives:\nname, replicas, namespace', fillcolor='#FFCDD2')
+    operations_flow.node('5', '5. Tool executes:\ngcloud ssh to k8s-master-01', fillcolor='#F8BBD0')
+    operations_flow.node('6', '6. Run: kubectl scale deployment\n--replicas=3', fillcolor='#E1BEE7')
+    operations_flow.node('7', '7. K8s applies changes:\nupdates ReplicaSet', fillcolor='#D1C4E9')
+    operations_flow.node('8', '8. Verify with kubectl get:\ncheck current vs desired', fillcolor='#FFCCBC')
+    operations_flow.node('9', '9. MCP Server → Agent\nConfirmation with status', fillcolor='#C8E6C9')
+    operations_flow.node('10', '10. Agent returns success:\nScaled to 3, Ready: 3/3', fillcolor='#B2DFDB')
+    
+    operations_flow.edge('1', '2')
+    operations_flow.edge('2', '3')
+    operations_flow.edge('3', '4')
+    operations_flow.edge('4', '5')
+    operations_flow.edge('5', '6')
+    operations_flow.edge('6', '7')
+    operations_flow.edge('7', '8')
+    operations_flow.edge('8', '9')
+    operations_flow.edge('9', '10')
+    
+    operations_flow_diagram = operations_flow.pipe(format='svg').decode('utf-8')
+    
+    # Create execution flow diagram for Monitor Agent
+    monitor_flow = graphviz.Digraph()
+    monitor_flow.attr(rankdir='TB')
+    monitor_flow.attr('node', shape='box', style='rounded,filled', fontsize='10', width='3.5')
+    
+    monitor_flow.node('1', '1. User Query\n"Show me CPU usage"', fillcolor='#E3F2FD')
+    monitor_flow.node('2', '2. Supervisor routes to Monitor Agent\n(keyword: "CPU usage")', fillcolor='#C8E6C9')
+    monitor_flow.node('3', '3. Agent → MCP Client\nHTTP POST to localhost:8004/mcp', fillcolor='#FFF9C4')
+    monitor_flow.node('4', '4. MCP Server receives request\nBuilds PromQL query', fillcolor='#FFCDD2')
+    monitor_flow.node('5', '5. Tool executes:\nHTTP GET to Prometheus', fillcolor='#F8BBD0')
+    monitor_flow.node('6', '6. Query Prometheus API:\n/api/v1/query?query=node_cpu...', fillcolor='#E1BEE7')
+    monitor_flow.node('7', '7. Prometheus returns metrics:\nJSON with instance, value pairs', fillcolor='#D1C4E9')
+    monitor_flow.node('8', '8. Parse metrics data:\nExtract instance & percentage', fillcolor='#FFCCBC')
+    monitor_flow.node('9', '9. MCP Server → Agent\nReturns formatted metrics', fillcolor='#C8E6C9')
+    monitor_flow.node('10', '10. Agent formats for user:\nmaster: 13%, worker: 7%', fillcolor='#B2DFDB')
+    
+    monitor_flow.edge('1', '2')
+    monitor_flow.edge('2', '3')
+    monitor_flow.edge('3', '4')
+    monitor_flow.edge('4', '5')
+    monitor_flow.edge('5', '6')
+    monitor_flow.edge('6', '7')
+    monitor_flow.edge('7', '8')
+    monitor_flow.edge('8', '9')
+    monitor_flow.edge('9', '10')
+    
+    monitor_flow_diagram = monitor_flow.pipe(format='svg').decode('utf-8')
+    
+    content = f"""
+    <div class="container-fluid architecture-full-width">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 style="color: #1a73e8; margin-bottom: 5px;">🔍 Detailed Flow Examples</h2>
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb" style="background: none; padding: 0; margin: 0;">
+                                <li class="breadcrumb-item"><a href="/docs" style="color: #1a73e8;">Docs</a></li>
+                                <li class="breadcrumb-item active">Detailed Flow Examples</li>
+                            </ol>
+                        </nav>
+                    </div>
+                </div>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">
+                        🎯 How Supervisor Routes Queries
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <h5 style="color: #1a73e8; margin-bottom: 15px;">Supervisor's System Prompt</h5>
+                                <pre style="background: #ffffff; padding: 15px; border-radius: 5px; font-size: 13px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;"># Supervisor Agent receives:
+user_query = "Check pod health in kube-system"
+
+# Claude analyzes query using this prompt:
+You are a supervisor routing queries to specialized agents:
+- health_agent: Pod status, readiness, liveness checks
+- describe_agent: Resource details, configurations
+- resources_agent: CPU/memory capacity, limits
+- operations_agent: Create, delete, scale resources  
+- monitor_agent: Prometheus metrics, real-time data
+
+Analyze the query and route to appropriate agent.</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <h5 style="color: #1a73e8; margin-bottom: 15px;">Routing Decision</h5>
+                                <pre style="background: #ffffff; padding: 15px; border-radius: 5px; font-size: 13px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;"># Claude's reasoning:
+Query: "Check pod health in kube-system"
+
+Analysis:
+- Contains "health" keyword ✓
+- Refers to "pod" status ✓
+- About checking current state ✓
+
+Decision: Route to HEALTH_AGENT
+
+Response:
+{{
+  "next": "health_agent",
+  "reasoning": "Query asks about pod health status"
+}}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #28a745; padding-bottom: 10px;">
+                        1️⃣ Health Agent → <code>check_pod_health</code> Tool
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #28a745; margin-bottom: 15px;">📝 Tool Definition</h5>
+                            <pre style="background: #ffffff; padding: 20px; border-radius: 8px; font-size: 12px; line-height: 1.6; overflow-x: auto; border: 1px solid #dee2e6;"><code style="color: #212529;">@mcp.tool()
+def check_pod_health(namespace: str = "default", pod_name: str = "") -> str:
+    '''Check health status of pods'''
+    
+    # 1. Build kubectl command
+    cmd = f"kubectl get pods -n {{namespace}} -o json"
+    
+    # 2. Execute via gcloud SSH to K8s master
+    ssh_cmd = (
+        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"--zone=us-west1-a --project=beaming-age-463822-k7 "
+        f"--command='{{cmd}}'"
+    )
+    result = subprocess.check_output(ssh_cmd, shell=True)
+    
+    # 3. Parse JSON response - Tool PARSES JSON:
+    data = json.loads(result)
+    pod = data["items"][0]
+    
+    name = pod["metadata"]["name"]
+    status = pod["status"]["phase"]
+    ready = "1/1"  # from conditions
+    restarts = pod["status"]["containerStatuses"][0]["restartCount"]
+    
+    # Tool returns text:
+    return f"Pod: {{name}}\\nStatus: {{status}}\\nReady: {{ready}}\\nRestarts: {{restarts}}"</code></pre>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #28a745; margin-bottom: 15px;">🔄 Execution Flow</h5>
+                            <div class="architecture-diagram">
+                                {health_flow_diagram}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #1a73e8; margin-bottom: 15px; margin-top: 20px;">📤 MCP Communication - Complete Round-Trip Flow</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 15px;">
+                                <h6 style="color: #1976d2; margin-bottom: 10px;">1️⃣ Agent → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code>POST http://localhost:8000/mcp
+
+{{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {{
+    "name": "check_pod_health",
+    "arguments": {{
+      "namespace": "kube-system"
+    }}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                                <h6 style="color: #388e3c; margin-bottom: 10px;">2️⃣ MCP Server → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP parses JSON-RPC request
+# and invokes tool function:
+
+check_pod_health(
+    namespace="kube-system",
+    pod_name=""
+)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+                                <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
+gcloud compute ssh \\
+  pggo890@k8s-master-01 \\
+  --zone=us-west1-a \\
+  --command="kubectl get pods \\
+    -n kube-system -o json"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #ffcdd2; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin-bottom: 15px;">
+                                <h6 style="color: #c62828; margin-bottom: 10px;">4️⃣ K8s Cluster → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># K8s returns RAW JSON:
+{{
+  "items": [{{
+    "metadata": {{
+      "name": "coredns-xxx"
+    }},
+    "status": {{
+      "phase": "Running",
+      "conditions": [{{
+        "type": "Ready",
+        "status": "True"
+      }}],
+      "containerStatuses": [{{
+        "restartCount": 0
+      }}]
+    }}
+  }}]
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #e1bee7; padding: 15px; border-radius: 8px; border-left: 4px solid #9c27b0; margin-bottom: 15px;">
+                                <h6 style="color: #6a1b9a; margin-bottom: 10px;">5️⃣ Tool Parses → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool PARSES JSON:
+data = json.loads(output)
+pod = data["items"][0]
+
+name = pod["metadata"]["name"]
+status = pod["status"]["phase"]
+ready = "1/1"
+restarts = pod["status"]["containerStatuses"][0]["restartCount"]
+
+# Tool returns text:
+return f"Pod: {{name}}\\nStatus: {{status}}\\nReady: {{ready}}\\nRestarts: {{restarts}}"</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #b2dfdb; padding: 15px; border-radius: 8px; border-left: 4px solid #009688; margin-bottom: 15px;">
+                                <h6 style="color: #00695c; margin-bottom: 10px;">6️⃣ MCP Server → Agent</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP wraps tool output:
+{{
+  "jsonrpc": "2.0",
+  "result": {{
+    "content": [{{
+      "type": "text",
+      "text": "Pod: coredns-xxx
+Status: Running
+Ready: 1/1
+Restarts: 0"
+    }}]
+  }}
+}}
+
+# Agent extracts:
+text = response["result"]["content"][0]["text"]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #ff9800; padding-bottom: 10px;">
+                        2️⃣ Describe Agent → <code>describe_resource</code> Tool
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #ff9800; margin-bottom: 15px;">📝 Tool Definition</h5>
+                            <pre style="background: #ffffff; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;">@mcp.tool()
+def describe_resource(
+    resource_type: str,
+    resource_name: str,
+    namespace: str = "default"
+) -> str:
+    '''Get detailed info about a resource'''
+    
+    # 1. Build kubectl describe command
+    cmd = f"kubectl describe {{resource_type}} {{resource_name}}"
+    cmd += f" -n {{namespace}}"
+    
+    # 2. Execute via gcloud SSH to K8s master
+    ssh_cmd = (
+        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"--zone=us-west1-a --project=beaming-age-463822-k7 "
+        f"--command='{{cmd}}'"
+    )
+    result = subprocess.check_output(ssh_cmd, shell=True)
+    
+    # 3. Read output (detailed description)
+    output = result.decode()
+    
+    # kubectl describe returns human-readable text (NOT JSON)
+    # No parsing needed - just return as-is:
+    return output
+    
+    # Output contains:
+    # - Name, Namespace, Labels
+    # - Status, Conditions
+    # - Container specs, Volumes
+    # - Events (last 10 minutes)</code></pre>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #ff9800; margin-bottom: 15px;">🔄 Execution Flow</h5>
+                            <div class="architecture-diagram">
+                                {describe_flow_diagram}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #ff9800; margin-bottom: 15px;">📤 Example Response</h5>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; font-size: 12px;"><code>Name:         coredns-5dd5756b68-bhkdv
+Namespace:    kube-system
+Node:         k8s-master-01
+Status:       Running
+IP:           10.244.0.2
+Containers:
+  coredns:
+    Image:      registry.k8s.io/coredns/coredns:v1.11.1
+    Port:       53/UDP, 53/TCP
+    State:      Running</code></pre>
+                    
+                    <h5 style="color: #1a73e8; margin-bottom: 15px; margin-top: 20px;">📤 MCP Communication - Complete Round-Trip Flow</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 15px;">
+                                <h6 style="color: #1976d2; margin-bottom: 10px;">1️⃣ Agent → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code>POST http://localhost:8002/mcp
+
+{{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {{
+    "name": "describe_resource",
+    "arguments": {{
+      "resource_type": "pod",
+      "resource_name": "coredns-xxx",
+      "namespace": "kube-system"
+    }}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                                <h6 style="color: #388e3c; margin-bottom: 10px;">2️⃣ MCP Server → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP parses and invokes:
+
+describe_resource(
+    resource_type="pod",
+    resource_name="coredns-xxx",
+    namespace="kube-system"
+)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+                                <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
+gcloud compute ssh \\
+  pggo890@k8s-master-01 \\
+  --zone=us-west1-a \\
+  --command="kubectl describe \\
+    pod coredns-xxx \\
+    -n kube-system"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #ffcdd2; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin-bottom: 15px;">
+                                <h6 style="color: #c62828; margin-bottom: 10px;">4️⃣ K8s Cluster → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># K8s returns RAW TEXT:
+Name:       coredns-xxx
+Namespace:  kube-system
+Node:       k8s-master-01
+Status:     Running
+IP:         10.244.0.2
+Containers:
+  coredns:
+    Image:  coredns:v1.11.1
+    State:  Running
+Events:     &lt;none&gt;</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #e1bee7; padding: 15px; border-radius: 8px; border-left: 4px solid #9c27b0; margin-bottom: 15px;">
+                                <h6 style="color: #6a1b9a; margin-bottom: 10px;">5️⃣ Tool Returns → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool returns text as-is
+# (kubectl describe already
+# gives human-readable format)
+
+return output
+# No JSON parsing needed!
+
+# Returns complete description
+# text to MCP Server</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #b2dfdb; padding: 15px; border-radius: 8px; border-left: 4px solid #009688; margin-bottom: 15px;">
+                                <h6 style="color: #00695c; margin-bottom: 10px;">6️⃣ MCP Server → Agent</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP wraps tool output:
+{{
+  "jsonrpc": "2.0",
+  "result": {{
+    "content": [{{
+      "type": "text",
+      "text": "Name: coredns-xxx
+Namespace: kube-system
+Status: Running
+IP: 10.244.0.2..."
+    }}]
+  }}
+}}
+
+# Agent extracts:
+text = response["result"]["content"][0]["text"]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #2196f3; padding-bottom: 10px;">
+                        3️⃣ Resources Agent → <code>get_node_resources</code> Tool
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #2196f3; margin-bottom: 15px;">📝 Tool Definition</h5>
+                            <pre style="background: #ffffff; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;">@mcp.tool()
+def get_node_resources() -> str:
+    '''Get CPU and memory capacity of nodes'''
+    
+    # 1. Build kubectl command for node resources
+    cmd = "kubectl get nodes -o json"
+    
+    # 2. Execute via gcloud SSH to K8s master
+    ssh_cmd = (
+        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"--zone=us-west1-a --project=beaming-age-463822-k7 "
+        f"--command='{{cmd}}'"
+    )
+    result = subprocess.check_output(ssh_cmd, shell=True).decode()
+    
+    # 3. Parse JSON to extract capacity/allocatable
+    # Tool PARSES JSON:
+    data = json.loads(result)
+    node = data["items"][0]
+    
+    name = node["metadata"]["name"]
+    cpu = node["status"]["capacity"]["cpu"]
+    mem_ki = node["status"]["capacity"]["memory"]
+    
+    # Convert Ki to GiB:
+    mem_gib = int(mem_ki.replace('Ki', '')) / 1024 / 1024
+    
+    # Tool returns text:
+    return f"{{name}}:\\n    CPU: {{cpu}} cores\\n    Memory: {{mem_gib:.1f}} GiB"</code></pre>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #2196f3; margin-bottom: 15px;">🔄 Execution Flow</h5>
+                            <div class="architecture-diagram">
+                                {resources_flow_diagram}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #1a73e8; margin-bottom: 15px; margin-top: 20px;">📤 MCP Communication - Complete Round-Trip Flow</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 15px;">
+                                <h6 style="color: #1976d2; margin-bottom: 10px;">1️⃣ Agent → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code>POST http://localhost:8001/mcp
+
+{{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {{
+    "name": "get_node_resources",
+    "arguments": {{}}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                                <h6 style="color: #388e3c; margin-bottom: 10px;">2️⃣ MCP Server → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP parses JSON-RPC request
+# and invokes tool function:
+
+get_node_resources()</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+                                <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
+gcloud compute ssh \\
+  pggo890@k8s-master-01 \\
+  --zone=us-west1-a \\
+  --command="kubectl get nodes \\
+    -o json"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #ffcdd2; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin-bottom: 15px;">
+                                <h6 style="color: #c62828; margin-bottom: 10px;">4️⃣ K8s Cluster → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># K8s returns RAW JSON:
+{{
+  "items": [{{
+    "metadata": {{
+      "name": "k8s-master-01"
+    }},
+    "status": {{
+      "capacity": {{
+        "cpu": "2",
+        "memory": "3926600Ki"
+      }},
+      "allocatable": {{
+        "cpu": "2",
+        "memory": "3824200Ki"
+      }}
+    }}
+  }}]
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #e1bee7; padding: 15px; border-radius: 8px; border-left: 4px solid #9c27b0; margin-bottom: 15px;">
+                                <h6 style="color: #6a1b9a; margin-bottom: 10px;">5️⃣ Tool Parses → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool PARSES JSON:
+data = json.loads(output)
+node = data["items"][0]
+
+name = node["metadata"]["name"]
+cpu = node["status"]["capacity"]["cpu"]
+mem_ki = node["status"]["capacity"]["memory"]
+
+# Convert Ki to GiB:
+mem_gib = int(mem_ki.replace('Ki', '')) / 1024 / 1024
+
+# Tool returns text:
+return f"{{name}}:\\n    CPU: {{cpu}} cores\\n    Memory: {{mem_gib:.1f}} GiB"</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #b2dfdb; padding: 15px; border-radius: 8px; border-left: 4px solid #009688; margin-bottom: 15px;">
+                                <h6 style="color: #00695c; margin-bottom: 10px;">6️⃣ MCP Server → Agent</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP wraps tool output:
+{{
+  "jsonrpc": "2.0",
+  "result": {{
+    "content": [{{
+      "type": "text",
+      "text": "k8s-master-01:
+    CPU: 2 cores
+    Memory: 3.7 GiB
+k8s-worker-01:
+    CPU: 2 cores
+    Memory: 3.7 GiB"
+    }}]
+  }}
+}}
+
+# Agent extracts:
+text = response["result"]["content"][0]["text"]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #2196f3; margin-bottom: 15px;">📤 Example Response</h5>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; font-size: 12px;"><code>[
+  {{
+    "name": "k8s-master-01",
+    "cpu": "2",
+    "memory": "4007084Ki",
+    "allocatable_cpu": "2",
+    "allocatable_memory": "3884492Ki"
+  }},
+  {{
+    "name": "k8s-worker-01",
+    "cpu": "2",
+    "memory": "4007076Ki",
+    "allocatable_cpu": "2",
+    "allocatable_memory": "3884484Ki"
+  }}
+]</code></pre>
+                </section>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #ff5722; padding-bottom: 10px;">
+                        4️⃣ Operations Agent → <code>scale_deployment</code> Tool
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #ff5722; margin-bottom: 15px;">📝 Tool Definition</h5>
+                            <pre style="background: #ffffff; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;">@mcp.tool()
+def scale_deployment(
+    deployment_name: str,
+    replicas: int,
+    namespace: str = "default"
+) -> str:
+    '''Scale a deployment to specified replicas'''
+    
+    # 1. Build kubectl scale command
+    cmd = f"kubectl scale deployment {{deployment_name}}"
+    cmd += f" --replicas={{replicas}} -n {{namespace}}"
+    
+    # 2. Execute via gcloud SSH to K8s master
+    ssh_cmd = (
+        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"--zone=us-west1-a --project=beaming-age-463822-k7 "
+        f"--command='{{cmd}}'"
+    )
+    scale_result = subprocess.check_output(ssh_cmd, shell=True).decode()
+    # Output: "deployment.apps/nginx scaled"
+    
+    # 3. Verify the scaling worked
+    verify_cmd = f"kubectl get deployment {{deployment_name}}"
+    verify_cmd += f" -n {{namespace}} -o json"
+    stdin, stdout, stderr = ssh_client.exec_command(verify_cmd)
+    
+    # Tool PARSES JSON:
+    data = json.loads(output)
+    
+    name = data["metadata"]["name"]
+    desired = data["spec"]["replicas"]
+    current = data["status"]["replicas"]
+    ready = data["status"]["readyReplicas"]
+    
+    # Tool returns text:
+    return f"Successfully scaled deployment {{name}} to {{desired}} replicas.\\nCurrent status: {{ready}}/{{current}} ready"</code></pre>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #ff5722; margin-bottom: 15px;">🔄 Execution Flow</h5>
+                            <div class="architecture-diagram">
+                                {operations_flow_diagram}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #1a73e8; margin-bottom: 15px; margin-top: 20px;">📤 MCP Communication - Complete Round-Trip Flow</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 15px;">
+                                <h6 style="color: #1976d2; margin-bottom: 10px;">1️⃣ Agent → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code>POST http://localhost:8003/mcp
+
+{{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {{
+    "name": "scale_deployment",
+    "arguments": {{
+      "deployment_name": "nginx",
+      "replicas": 3,
+      "namespace": "default"
+    }}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                                <h6 style="color: #388e3c; margin-bottom: 10px;">2️⃣ MCP Server → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP parses JSON-RPC request
+# and invokes tool function:
+
+scale_deployment(
+    deployment_name="nginx",
+    replicas=3,
+    namespace="default"
+)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+                                <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
+gcloud compute ssh \\
+  pggo890@k8s-master-01 \\
+  --zone=us-west1-a \\
+  --command="kubectl scale \\
+    deployment nginx \\
+    --replicas=3 -n default &amp;&amp; \\
+    kubectl get deployment nginx \\
+    -n default -o json"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #ffcdd2; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin-bottom: 15px;">
+                                <h6 style="color: #c62828; margin-bottom: 10px;">4️⃣ K8s Cluster → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># K8s returns RAW JSON:
+{{
+  "metadata": {{
+    "name": "nginx"
+  }},
+  "spec": {{
+    "replicas": 3
+  }},
+  "status": {{
+    "replicas": 3,
+    "readyReplicas": 3,
+    "availableReplicas": 3
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #e1bee7; padding: 15px; border-radius: 8px; border-left: 4px solid #9c27b0; margin-bottom: 15px;">
+                                <h6 style="color: #6a1b9a; margin-bottom: 10px;">5️⃣ Tool Parses → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool PARSES JSON:
+data = json.loads(output)
+
+name = data["metadata"]["name"]
+desired = data["spec"]["replicas"]
+current = data["status"]["replicas"]
+ready = data["status"]["readyReplicas"]
+
+# Tool returns text:
+return f"Successfully scaled deployment {{name}} to {{desired}} replicas. Current status: {{ready}}/{{current}} ready"</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #b2dfdb; padding: 15px; border-radius: 8px; border-left: 4px solid #009688; margin-bottom: 15px;">
+                                <h6 style="color: #00695c; margin-bottom: 10px;">6️⃣ MCP Server → Agent</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP wraps tool output:
+{{
+  "jsonrpc": "2.0",
+  "result": {{
+    "content": [{{
+      "type": "text",
+      "text": "Successfully scaled deployment nginx to 3 replicas.
+Current status: 3/3 ready"
+    }}]
+  }}
+}}
+
+# Agent extracts:
+text = response["result"]["content"][0]["text"]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #ff5722; margin-bottom: 15px;">📤 Example Response</h5>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; font-size: 12px;"><code>deployment.apps/nginx-deployment scaled
+
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   3/3     3            3           10m</code></pre>
+                </section>
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">
+                        5️⃣ Monitor Agent → <code>query_prometheus_instant</code> Tool
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #9c27b0; margin-bottom: 15px;">📝 Tool Definition</h5>
+                            <pre style="background: #ffffff; padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.6; border: 1px solid #dee2e6;"><code style="color: #212529;">@mcp.tool()
+def query_prometheus_instant(
+    query: str,
+    time: str = ""
+) -> str:
+    '''Execute instant Prometheus query'''
+    
+    # 1. Build Prometheus API URL
+    PROMETHEUS_URL = "http://35.233.152.108:9090"
+    url = f"{{PROMETHEUS_URL}}/api/v1/query"
+    
+    # 2. Prepare query parameters
+    params = {{"query": query}}
+    if time:
+        params["time"] = time  # Unix timestamp
+    
+    # Example query:
+    # "node_memory_MemTotal_bytes" - Total memory
+    # "100 - (node_memory_MemAvailable_bytes / 
+    #         node_memory_MemTotal_bytes * 100)" - Memory usage %
+    
+    # 3. Execute HTTP GET request
+    response = requests.get(url, params=params, timeout=10)
+    
+    # 4. Parse JSON response
+    # Tool PARSES JSON:
+    data = response.json()
+    results = data["data"]["result"]
+    
+    metrics = []
+    for r in results:
+        instance = r["metric"]["instance"]
+        # e.g. "10.138.0.2:9100"
+        
+        value = r["value"][1]
+        # e.g. "15.23"
+        
+        # Map IP to node name:
+        node = map_ip_to_node(instance)
+        
+        metrics.append(f"{{node}}: {{value}}%")
+    
+    # Tool returns text:
+    return '\\n'.join(metrics)</code></pre>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h5 style="color: #9c27b0; margin-bottom: 15px;">🔄 Execution Flow</h5>
+                            <div class="architecture-diagram">
+                                {monitor_flow_diagram}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h5 style="color: #1a73e8; margin-bottom: 15px; margin-top: 20px;">📤 MCP Communication & Prometheus Query</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3; margin-bottom: 15px;">
+                                <h6 style="color: #1976d2; margin-bottom: 10px;">1️⃣ Agent → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code>POST http://localhost:8004/mcp
+
+{{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {{
+    "name": "query_prometheus_instant",
+    "arguments": {{
+      "query": "100 - (avg by(instance) 
+        (rate(node_cpu_seconds_total
+        {{mode='idle'}}[5m])) * 100)"
+    }}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; margin-bottom: 15px;">
+                                <h6 style="color: #388e3c; margin-bottom: 10px;">2️⃣ MCP Server → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP parses JSON-RPC request
+# and invokes tool function:
+
+query_prometheus_instant(
+    query="100 - (avg by(instance) 
+      (rate(node_cpu_seconds_total
+      {{mode='idle'}}[5m])) * 100)"
+)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
+                                <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → Prometheus</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes HTTP request:
+GET http://35.233.152.108:9090/api/v1/query
+
+Query params:
+query=100 - (avg by(instance)
+  (rate(node_cpu_seconds_total
+  {{mode='idle'}}[5m])) * 100)</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div style="background: #ffcdd2; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin-bottom: 15px;">
+                                <h6 style="color: #c62828; margin-bottom: 10px;">4️⃣ Prometheus → Tool</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Prometheus returns RAW JSON:
+{{
+  "status": "success",
+  "data": {{
+    "resultType": "vector",
+    "result": [
+      {{
+        "metric": {{
+          "instance": "10.138.0.2:9100"
+        }},
+        "value": [1234567, "15.23"]
+      }},
+      {{
+        "metric": {{
+          "instance": "10.138.0.3:9100"
+        }},
+        "value": [1234567, "8.45"]
+      }}
+    ]
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #e1bee7; padding: 15px; border-radius: 8px; border-left: 4px solid #9c27b0; margin-bottom: 15px;">
+                                <h6 style="color: #6a1b9a; margin-bottom: 10px;">5️⃣ Tool Parses → MCP Server</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool PARSES JSON:
+data = response.json()
+results = data["data"]["result"]
+
+metrics = []
+for r in results:
+    instance = r["metric"]["instance"]
+    # e.g. "10.138.0.2:9100"
+    
+    value = r["value"][1]
+    # e.g. "15.23"
+    
+    # Map IP to node name:
+    node = map_ip_to_node(instance)
+    
+    metrics.append(f"{{node}}: {{value}}%")
+
+# Tool returns text:
+return '\\n'.join(metrics)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div style="background: #b2dfdb; padding: 15px; border-radius: 8px; border-left: 4px solid #009688; margin-bottom: 15px;">
+                                <h6 style="color: #00695c; margin-bottom: 10px;">6️⃣ MCP Server → Agent</h6>
+                                <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># MCP wraps tool output:
+{{
+  "jsonrpc": "2.0",
+  "result": {{
+    "content": [{{
+      "type": "text",
+      "text": "k8s-master-01: 15.23%
+k8s-worker-01: 8.45%"
+    }}]
+  }}
+}}
+
+# Agent extracts:
+text = response["result"]["content"][0]["text"]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <hr style="margin: 40px 0; border: 0; border-top: 2px solid #dee2e6;">
+                
+                <section style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">
+                        🔗 MCP Protocol Communication
+                    </h3>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; border-left: 4px solid #2196f3;">
+                                <h5 style="color: #1976d2; margin-bottom: 15px;">1️⃣ Agent → MCP Server</h5>
+                                <pre style="background: white; padding: 15px; border-radius: 5px; font-size: 12px; margin: 0;"><code>POST http://localhost:8000/mcp
+Content-Type: application/json
+
+{{
+  "method": "tools/call",
+  "params": {{
+    "name": "check_pod_health",
+    "arguments": {{
+      "namespace": "kube-system"
+    }}
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4 mb-3">
+                            <div style="background: #c8e6c9; padding: 20px; border-radius: 8px; border-left: 4px solid #4caf50;">
+                                <h5 style="color: #388e3c; margin-bottom: 15px;">2️⃣ MCP Server → K8s/Prometheus</h5>
+                                <pre style="background: white; padding: 15px; border-radius: 5px; font-size: 12px; margin: 0;"><code># For Kubernetes tools:
+SSH pggo890@k8s-master-01
+→ kubectl get pods -n kube-system -o json
+
+# For Prometheus tools:
+GET http://35.233.152.108:9090/api/v1/query
+→ ?query=up</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4 mb-3">
+                            <div style="background: #fff9c4; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+                                <h5 style="color: #f57c00; margin-bottom: 15px;">3️⃣ MCP Server → Agent</h5>
+                                <pre style="background: white; padding: 15px; border-radius: 5px; font-size: 12px; margin: 0;"><code>HTTP/1.1 200 OK
+Content-Type: application/json
+
+{{
+  "result": {{
+    "content": [
+      {{
+        "type": "text",
+        "text": "Pod health report..."
+      }}
+    ]
+  }}
+}}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <div style="margin-top: 30px; padding: 25px; background: #d1ecf1; border-left: 4px solid #0c5460; border-radius: 8px;">
+                    <h4 style="color: #0c5460; margin-bottom: 15px;">💡 Key Takeaways</h4>
+                    <ul style="margin: 0; padding-left: 25px; line-height: 2; color: #0c5460;">
+                        <li><strong>Tool Diversity:</strong> Some tools parse JSON (like check_pod_health), others return raw text (like describe_resource)</li>
+                        <li><strong>MCP Standard:</strong> All communication uses JSON-RPC 2.0 protocol regardless of tool implementation</li>
+                        <li><strong>Agent Intelligence:</strong> Claude analyzes tool outputs and formats responses in natural language</li>
+                        <li><strong>Separation of Concerns:</strong> Tools handle data retrieval, Agents handle interpretation</li>
+                        <li><strong>Error Handling:</strong> Each layer (Agent, MCP, Tool, K8s) can fail independently with proper error propagation</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return render_template_string(dashboard_template,
+                                title="Detailed Flow Examples - Kubernetes AI Dashboard",
+                                page="docs",
+                                page_title="",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/docs/component-glossary')
+def docs_component_glossary():
+    """Component Glossary documentation subpage."""
+    
+    content = f"""
+    <div class="container-fluid architecture-full-width">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 style="color: #1a73e8; margin-bottom: 5px;">📖 Component Glossary</h2>
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb" style="background: none; padding: 0; margin: 0;">
+                                <li class="breadcrumb-item"><a href="/docs" style="color: #1a73e8;">Docs</a></li>
+                                <li class="breadcrumb-item active">Component Glossary</li>
+                            </ol>
+                        </nav>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #1a73e8; margin-bottom: 20px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">🎯 Supervisor Agent</h4>
+                            <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; border-left: 4px solid #2196f3;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Role:</strong> Query router and orchestrator<br><br>
+                                    <strong>Technology:</strong> LangGraph workflow with Claude Sonnet 4.5<br><br>
+                                    <strong>Function:</strong> Analyzes user queries and routes them to the appropriate specialized agent. 
+                                    Maintains conversation context and combines responses from multiple agents when needed.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #28a745; margin-bottom: 20px; border-bottom: 2px solid #28a745; padding-bottom: 10px;">❤️ Health Agent</h4>
+                            <div style="background: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Specialization:</strong> Pod health monitoring<br><br>
+                                    <strong>Tools:</strong> check_pod_health, check_pod_readiness, check_pod_liveness<br><br>
+                                    <strong>Data Source:</strong> Kubernetes API via kubectl
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #ff9800; margin-bottom: 20px; border-bottom: 2px solid #ff9800; padding-bottom: 10px;">📋 Describe Agent</h4>
+                            <div style="background: #fff3e0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff9800;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Specialization:</strong> Resource details and configurations<br><br>
+                                    <strong>Tools:</strong> describe_resource, get_resource_yaml, get_resource_events<br><br>
+                                    <strong>Data Source:</strong> Kubernetes API via kubectl describe/get
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #2196f3; margin-bottom: 20px; border-bottom: 2px solid #2196f3; padding-bottom: 10px;">📊 Resources Agent</h4>
+                            <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; border-left: 4px solid #2196f3;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Specialization:</strong> Capacity planning and resource allocation<br><br>
+                                    <strong>Tools:</strong> get_node_resources, get_pod_resources, get_namespace_quota<br><br>
+                                    <strong>Data Source:</strong> Kubernetes API via kubectl
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #ff5722; margin-bottom: 20px; border-bottom: 2px solid #ff5722; padding-bottom: 10px;">⚙️ Operations Agent</h4>
+                            <div style="background: #fbe9e7; padding: 20px; border-radius: 8px; border-left: 4px solid #ff5722;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Specialization:</strong> Cluster modifications<br><br>
+                                    <strong>Tools:</strong> scale_deployment, create_resource, delete_resource, apply_yaml<br><br>
+                                    <strong>Data Source:</strong> Kubernetes API via kubectl (write operations)
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #9c27b0; margin-bottom: 20px; border-bottom: 2px solid #9c27b0; padding-bottom: 10px;">📈 Monitor Agent</h4>
+                            <div style="background: #f3e5f5; padding: 20px; border-radius: 8px; border-left: 4px solid #9c27b0;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Specialization:</strong> Real-time metrics and monitoring<br><br>
+                                    <strong>Tools:</strong> query_prometheus_instant, query_prometheus_range, get_node_metrics, get_pod_metrics<br><br>
+                                    <strong>Data Source:</strong> Prometheus HTTP API (PromQL queries)
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #00897b; margin-bottom: 20px; border-bottom: 2px solid #00897b; padding-bottom: 10px;">🔌 MCP Servers</h4>
+                            <div style="background: #e0f2f1; padding: 20px; border-radius: 8px; border-left: 4px solid #00897b;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Technology:</strong> FastMCP (Model Context Protocol)<br><br>
+                                    <strong>Protocol:</strong> HTTP/JSON over ports 8000-8004<br><br>
+                                    <strong>Function:</strong> Expose tools as API endpoints that agents can call. Handle authentication, 
+                                    command execution, and response formatting.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #326ce5; margin-bottom: 20px; border-bottom: 2px solid #326ce5; padding-bottom: 10px;">☸️ Kubernetes Cluster</h4>
+                            <div style="background: #e8f0fe; padding: 20px; border-radius: 8px; border-left: 4px solid #326ce5;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Access Method:</strong> SSH to master node + kubectl commands<br><br>
+                                    <strong>Components:</strong> 2 nodes (master + worker), various system pods<br><br>
+                                    <strong>Monitoring:</strong> node_exporter, cAdvisor, kube-state-metrics
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); height: 100%;">
+                            <h4 style="color: #e6522c; margin-bottom: 20px; border-bottom: 2px solid #e6522c; padding-bottom: 10px;">📊 Prometheus</h4>
+                            <div style="background: #fbe9e7; padding: 20px; border-radius: 8px; border-left: 4px solid #e6522c;">
+                                <p style="margin: 0; line-height: 1.8; color: #424242;">
+                                    <strong>Location:</strong> prometheus-monitoring-01 VM (35.233.152.108:9090)<br><br>
+                                    <strong>Scrapers:</strong> node_exporter (node metrics), cAdvisor (container metrics), 
+                                    kube-state-metrics (K8s object state)<br><br>
+                                    <strong>Access:</strong> HTTP API with PromQL query language
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 30px; padding: 25px; background: #d1ecf1; border-left: 4px solid #0c5460; border-radius: 8px;">
+                    <h4 style="color: #0c5460; margin-bottom: 15px;">🎯 Key Architecture Insights</h4>
+                    <ul style="margin: 0; padding-left: 25px; line-height: 2; color: #0c5460;">
+                        <li><strong>Separation of Concerns:</strong> Each agent specializes in one domain (health, operations, monitoring, etc.)</li>
+                        <li><strong>MCP Protocol:</strong> Standardized communication between agents and tools via HTTP/JSON</li>
+                        <li><strong>Multiple Data Sources:</strong> Kubernetes (via SSH + kubectl) and Prometheus (via HTTP API)</li>
+                        <li><strong>Supervisor Pattern:</strong> Single entry point routes queries intelligently to specialized agents</li>
+                        <li><strong>Scalable Design:</strong> Easy to add new agents or tools without modifying existing components</li>
+                    </ul>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 25px; background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 8px;">
+                    <h4 style="color: #2e7d32; margin-bottom: 15px;">💡 Want to see this in action?</h4>
+                    <p style="margin: 0; line-height: 2; color: #2e7d32;">Try these queries in the CLI:</p>
+                    <ul style="margin: 10px 0 0 25px; padding: 0; line-height: 2; color: #2e7d32;">
+                        <li>"Check health of all pods in kube-system"</li>
+                        <li>"Show me CPU usage from Prometheus"</li>
+                        <li>"Scale my deployment to 5 replicas"</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return render_template_string(dashboard_template,
+                                title="Component Glossary - Kubernetes AI Dashboard",
                                 page="docs",
                                 page_title="",
                                 content=content,
