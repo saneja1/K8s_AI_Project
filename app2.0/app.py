@@ -345,20 +345,23 @@ dashboard_template = """
         }
         
         .header-content {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
             padding: 0 20px;
+            gap: 60px;
         }
         
         .logo {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             color: var(--text-primary);
             display: flex;
             align-items: center;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         
         .logo::before {
@@ -526,6 +529,7 @@ dashboard_template = """
                     <li><a href="/host-validator" class="{{ 'active' if page == 'validator' else '' }}">Host Validator</a></li>
                     <li><a href="/vm-status" class="{{ 'active' if page == 'vm-status' else '' }}">VM Status</a></li>
                     <li><a href="/pod-monitor" class="{{ 'active' if page == 'pod-monitor' else '' }}">Pod Monitor</a></li>
+                    <li><a href="/docs" class="{{ 'active' if page == 'docs' else '' }}">Docs</a></li>
                 </ul>
             </nav>
             <button id="themeToggle" onclick="toggleTheme()" style="
@@ -579,6 +583,13 @@ dashboard_template = """
                 <h3 class="card-title">Pod Monitor</h3>
                 <p class="card-description">Real-time monitoring and management of Kubernetes pods, deployments, and services.</p>
                 <a href="/pod-monitor" class="card-button">Monitor Pods</a>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">📚</div>
+                <h3 class="card-title">Documentation</h3>
+                <p class="card-description">Comprehensive documentation, guides, and resources for the Kubernetes AI Dashboard.</p>
+                <a href="/docs" class="card-button">View Docs</a>
             </div>
         </div>
         {% else %}
@@ -1779,6 +1790,439 @@ def pod_monitor():
     return render_template_string(dashboard_template,
                                 title="Pod Monitor - Kubernetes AI Dashboard",
                                 page="pod-monitor",
+                                page_title="",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/docs')
+def docs():
+    content = """
+    <div style="margin: -120px -40px -70px -40px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; text-align: center;">
+            <h2 style="margin: 0; font-size: 2rem; font-weight: 600; color: white;">📚 Documentation</h2>
+            <p style="margin: 15px 0 0 0; opacity: 0.95; font-size: 1.1rem; color: white;">Guides, resources, and comprehensive documentation</p>
+        </div>
+        
+        <div style="padding: 40px; background: white;">
+            <!-- Architecture Subpages -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-bottom: 40px;">
+                <a href="/docs/full-architecture" style="text-decoration: none;">
+                    <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #667eea; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'">
+                        <h3 style="margin: 0 0 15px 0; color: #667eea;">📊 Full Architecture</h3>
+                        <p style="margin: 0; color: #4a5568;">Complete system architecture diagram showing all components and their interactions</p>
+                    </div>
+                </a>
+                
+                <a href="/docs/detailed-flow" style="text-decoration: none;">
+                    <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #4CAF50; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'">
+                        <h3 style="margin: 0 0 15px 0; color: #4CAF50;">🔍 Detailed Flow Examples</h3>
+                        <p style="margin: 0; color: #4a5568;">Step-by-step execution flows for each agent with MCP communication details</p>
+                    </div>
+                </a>
+                
+                <a href="/docs/component-glossary" style="text-decoration: none;">
+                    <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #FF9800; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'">
+                        <h3 style="margin: 0 0 15px 0; color: #FF9800;">📖 Component Glossary</h3>
+                        <p style="margin: 0; color: #4a5568;">Detailed reference guide for all agents, tools, and system components</p>
+                    </div>
+                </a>
+            </div>
+            
+            <div style="border-top: 2px solid #e2e8f0; margin: 40px 0; padding-top: 40px;">
+                <h2 style="color: #2d3748; margin-bottom: 30px;">📚 General Documentation</h2>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-bottom: 40px;">
+                <!-- Quick Links -->
+                <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <h3 style="margin: 0 0 15px 0; color: #2d3748;">🚀 Quick Start</h3>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 10px;"><a href="#getting-started" style="color: #667eea; text-decoration: none;">→ Getting Started</a></li>
+                        <li style="margin-bottom: 10px;"><a href="#setup" style="color: #667eea; text-decoration: none;">→ Installation & Setup</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Features -->
+                <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #4CAF50;">
+                    <h3 style="margin: 0 0 15px 0; color: #2d3748;">✨ Features</h3>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 10px;"><a href="#ai-assistant" style="color: #4CAF50; text-decoration: none;">→ AI Assistant</a></li>
+                        <li style="margin-bottom: 10px;"><a href="#monitoring" style="color: #4CAF50; text-decoration: none;">→ Monitoring & Metrics</a></li>
+                        <li style="margin-bottom: 10px;"><a href="#operations" style="color: #4CAF50; text-decoration: none;">→ Cluster Operations</a></li>
+                    </ul>
+                </div>
+                
+                <!-- API Reference -->
+                <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; border-left: 4px solid #FF9800;">
+                    <h3 style="margin: 0 0 15px 0; color: #2d3748;">🔧 API Reference</h3>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="margin-bottom: 10px;"><a href="#mcp-servers" style="color: #FF9800; text-decoration: none;">→ MCP Servers</a></li>
+                        <li style="margin-bottom: 10px;"><a href="#endpoints" style="color: #FF9800; text-decoration: none;">→ API Endpoints</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Main Documentation Content -->
+            <div style="max-width: 900px; margin: 0 auto;">
+                <section id="getting-started" style="margin-bottom: 50px;">
+                    <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">🚀 Getting Started</h2>
+                    <p style="line-height: 1.8; color: #4a5568;">
+                        The Kubernetes AI Dashboard is a multi-agent system powered by Claude Sonnet 4.5 and LangGraph, 
+                        designed to provide intelligent cluster management, monitoring, and operations capabilities.
+                    </p>
+                    <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <strong style="color: #1976d2;">💡 Key Capabilities:</strong>
+                        <ul style="margin-top: 10px;">
+                            <li>Natural language query interface for cluster operations</li>
+                            <li>Real-time monitoring with Prometheus integration</li>
+                            <li>Multi-agent architecture with specialized agents</li>
+                            <li>MCP (Model Context Protocol) for tool execution</li>
+                        </ul>
+                    </div>
+                </section>
+                
+                <section id="setup" style="margin-bottom: 50px;">
+                    <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">⚙️ Installation & Setup</h2>
+                    <h3 style="color: #4a5568;">Prerequisites</h3>
+                    <pre style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; overflow-x: auto;">
+Python 3.12+
+Virtual environment (.venv)
+Graphviz (system package)
+Google Cloud SDK (for cluster access)
+                    </pre>
+                    
+                    <h3 style="color: #4a5568; margin-top: 30px;">Starting the Dashboard</h3>
+                    <pre style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; overflow-x: auto;">
+cd /home/saneja/K8s_AI_Project/app2.0
+./startup.sh start
+                    </pre>
+                    
+                    <p style="line-height: 1.8; color: #4a5568; margin-top: 20px;">
+                        This will start the Flask dashboard on port 7000 and all MCP servers on ports 8000-8004.
+                    </p>
+                </section>
+                
+                <section id="architecture" style="margin-bottom: 50px;">
+                    <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">🏗️ System Architecture</h2>
+                    <p style="line-height: 1.8; color: #4a5568;">
+                        The system follows a supervisor-agent pattern where a central supervisor routes queries to specialized agents:
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0;">
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #667eea; margin: 0 0 10px 0;">🎯 Supervisor Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Routes queries to specialized agents based on keywords and intent</p>
+                        </div>
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #f44336; margin: 0 0 10px 0;">❤️ Health Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Pod health, readiness, and liveness checks</p>
+                        </div>
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #2196F3; margin: 0 0 10px 0;">📋 Describe Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Resource details and configurations</p>
+                        </div>
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #4CAF50; margin: 0 0 10px 0;">📊 Resources Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Capacity planning and resource allocation</p>
+                        </div>
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #FF9800; margin: 0 0 10px 0;">⚙️ Operations Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Cluster modifications and scaling</p>
+                        </div>
+                        <div style="background: #f0f4f8; padding: 20px; border-radius: 8px;">
+                            <h4 style="color: #9C27B0; margin: 0 0 10px 0;">📈 Monitor Agent</h4>
+                            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">Prometheus metrics and real-time data</p>
+                        </div>
+                    </div>
+                </section>
+                
+                <section id="mcp-servers" style="margin-bottom: 50px;">
+                    <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">🔌 MCP Servers</h2>
+                    <p style="line-height: 1.8; color: #4a5568;">
+                        Model Context Protocol servers expose tools as HTTP endpoints that agents can call:
+                    </p>
+                    <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                        <thead>
+                            <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                <th style="padding: 12px; text-align: left;">Server</th>
+                                <th style="padding: 12px; text-align: left;">Port</th>
+                                <th style="padding: 12px; text-align: left;">Tools</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="background: #f8f9fa;">
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">Health MCP</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">8000</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">check_pod_health, check_readiness</td>
+                            </tr>
+                            <tr style="background: white;">
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">Describe MCP</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">8002</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">describe_resource, get_yaml</td>
+                            </tr>
+                            <tr style="background: #f8f9fa;">
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">Resources MCP</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">8001</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">get_node_resources, get_pod_resources</td>
+                            </tr>
+                            <tr style="background: white;">
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">Operations MCP</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">8003</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">scale_deployment, create_resource</td>
+                            </tr>
+                            <tr style="background: #f8f9fa;">
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">Monitor MCP</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">8004</td>
+                                <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">query_prometheus, get_metrics</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+                
+                <section id="endpoints" style="margin-bottom: 50px;">
+                    <h2 style="color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">🌐 API Endpoints</h2>
+                    <div style="background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; font-family: monospace; margin: 20px 0;">
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #4CAF50;">POST</strong> /api/chat - Send query to AI assistant
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #2196F3;">GET</strong> /api/vm-data - Get VM status data
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #2196F3;">GET</strong> /api/pod-data - Get pod status data
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #FF9800;">POST</strong> /api/kubectl - Execute kubectl command
+                        </div>
+                    </div>
+                </section>
+                
+                <section style="background: #e8f5e9; padding: 30px; border-radius: 8px; border-left: 4px solid #4CAF50;">
+                    <h3 style="color: #2d3748; margin-top: 0;">💡 Need Help?</h3>
+                    <p style="line-height: 1.8; color: #4a5568;">
+                        For additional documentation, check the <code>/docs</code> folder in the project repository, 
+                        or try asking the <a href="/k8s-assistant" style="color: #667eea;">K8s AI Assistant</a> directly!
+                    </p>
+                </section>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return render_template_string(dashboard_template,
+                                title="Documentation - Kubernetes AI Dashboard",
+                                page="docs",
+                                page_title="",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/docs/full-architecture')
+def docs_full_architecture():
+    """Full Architecture documentation subpage."""
+    import graphviz
+    
+    # Create the main architecture diagram
+    dot = graphviz.Digraph(comment='K8s Multi-Agent Architecture')
+    dot.attr(rankdir='TB', splines='ortho', nodesep='0.3', ranksep='0.5', bgcolor='white')
+    dot.attr('node', shape='box', style='rounded,filled', fontname='Arial', fontsize='8', margin='0.15')
+    dot.attr('edge', fontname='Arial', fontsize='7', color='#666666')
+    
+    # User Layer
+    with dot.subgraph(name='cluster_user') as c:
+        c.attr(label='👤 USER INTERFACE', style='filled,rounded', color='#E3F2FD', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('CLI', '🖥️ CLI\n(cli.py)\nCommand: python cli.py -q "query"', fillcolor='#BBDEFB', shape='box', width='2')
+        c.node('WebUI', '🌐 Web UI\n(Flask:7000)\nBrowser Interface', fillcolor='#BBDEFB', shape='box', width='2')
+    
+    # Supervisor Layer with routing logic
+    with dot.subgraph(name='cluster_supervisor') as c:
+        c.attr(label='🎯 SUPERVISOR (LangGraph + Claude 4.5)', style='filled,rounded', color='#C8E6C9', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('Supervisor', '''🎯 Supervisor Agent\nAnalyzes & Routes Query\nCalls Multiple Agents''', 
+               fillcolor='#A5D6A7', shape='box', style='rounded,filled,bold', width='3')
+    
+    # Agent Layer
+    with dot.subgraph(name='cluster_agents') as c:
+        c.attr(label='🤖 SPECIALIZED AGENTS', style='filled,rounded', color='#FFF9C4', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('HealthAgent', '''❤️ Health\nhealth, status,\nreadiness''', fillcolor='#FFF59D', width='1.5', height='0.8')
+        c.node('DescribeAgent', '''📋 Describe\ndescribe, get,\nshow details''', fillcolor='#FFF59D', width='1.5', height='0.8')
+        c.node('ResourcesAgent', '''📊 Resources\ncapacity, limits,\nquotas''', fillcolor='#FFF59D', width='1.5', height='0.8')
+        c.node('OperationsAgent', '''⚙️ Operations\ncreate, delete,\nscale, apply''', fillcolor='#FFF59D', width='1.5', height='0.8')
+        c.node('MonitorAgent', '''📈 Monitor\nmetrics, CPU,\nmemory''', fillcolor='#FFF59D', width='1.5', height='0.8')
+    
+    # MCP Server Layer
+    with dot.subgraph(name='cluster_mcp') as c:
+        c.attr(label='🔌 MCP SERVERS (FastMCP)', style='filled,rounded', color='#FFCDD2', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('MCP_Health', '''🔌 Health\n:8000\ncheck_pod_health''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+        c.node('MCP_Describe', '''🔌 Describe\n:8002\ndescribe_resource''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+        c.node('MCP_Resources', '''🔌 Resources\n:8001\nget_node_resources''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+        c.node('MCP_Operations', '''🔌 Operations\n:8003\nscale_deployment''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+        c.node('MCP_Monitor', '''🔌 Monitor\n:8004\nquery_prometheus''', fillcolor='#EF9A9A', shape='component', width='1.5', height='0.8')
+    
+    # Data Source Layer
+    with dot.subgraph(name='cluster_sources') as c:
+        c.attr(label='💾 DATA SOURCES', style='filled,rounded', color='#E1BEE7', fontsize='11', fontname='Arial Bold', labeljust='l')
+        c.node('K8s', '''☸️ Kubernetes\nMaster: 10.138.0.2\nWorker: 10.138.0.3\nSSH + kubectl''', fillcolor='#CE93D8', shape='cylinder', width='2.5', height='1.2')
+        c.node('Prometheus', '''📊 Prometheus\n35.233.152.108:9090\nnode_exporter\ncAdvisor''', fillcolor='#CE93D8', shape='cylinder', width='2.5', height='1.2')
+    
+    # User to Supervisor edges
+    dot.edge('CLI', 'Supervisor', label=' Query String ', color='#2196F3', penwidth='1.5', fontcolor='#2196F3')
+    dot.edge('WebUI', 'Supervisor', label=' HTTP Request ', color='#2196F3', penwidth='1.5', fontcolor='#2196F3')
+    
+    # Supervisor to Agents with routing info
+    dot.edge('Supervisor', 'HealthAgent', label=' "health" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    dot.edge('Supervisor', 'DescribeAgent', label=' "describe" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    dot.edge('Supervisor', 'ResourcesAgent', label=' "resources" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    dot.edge('Supervisor', 'OperationsAgent', label=' "scale" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    dot.edge('Supervisor', 'MonitorAgent', label=' "metrics" ', color='#4CAF50', penwidth='1.5', fontcolor='#4CAF50')
+    
+    # Agents to MCP Servers
+    dot.edge('HealthAgent', 'MCP_Health', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
+    dot.edge('DescribeAgent', 'MCP_Describe', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
+    dot.edge('ResourcesAgent', 'MCP_Resources', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
+    dot.edge('OperationsAgent', 'MCP_Operations', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
+    dot.edge('MonitorAgent', 'MCP_Monitor', label=' HTTP POST\nMCP ', color='#FF9800', penwidth='1.5', style='dashed', fontcolor='#FF9800')
+    
+    # MCP Servers to Data Sources
+    dot.edge('MCP_Health', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Describe', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Resources', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Operations', 'K8s', label=' SSH\nkubectl ', color='#9C27B0', penwidth='1.5', style='dotted', fontcolor='#9C27B0')
+    dot.edge('MCP_Monitor', 'Prometheus', label=' HTTP GET\nPromQL ', color='#F44336', penwidth='1.5', style='dotted', fontcolor='#F44336')
+    
+    # Generate SVG
+    svg_graph = dot.pipe(format='svg').decode('utf-8')
+    
+    content = f"""
+    <div class="container-fluid" style="max-width: 98%; padding: 0 20px;">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 style="color: #1a73e8; margin-bottom: 5px;">📊 Full Architecture</h2>
+                        <nav aria-label="breadcrumb">
+                            <ol class="breadcrumb" style="background: none; padding: 0; margin: 0;">
+                                <li class="breadcrumb-item"><a href="/docs" style="color: #1a73e8;">Docs</a></li>
+                                <li class="breadcrumb-item active">Full Architecture</li>
+                            </ol>
+                        </nav>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; border-radius: 10px;">
+                    <strong>💡 System Flow:</strong> User Query → Supervisor analyzes & routes → Agent calls tool via MCP → Tool executes on K8s/Prometheus → Response flows back
+                </div>
+                
+                <section style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                    <h3 style="color: #333; margin-bottom: 20px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">
+                        Complete System Architecture
+                    </h3>
+                    
+                    <div style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 10px; width: 100%;">
+                        <div style="width: 100%; overflow: hidden;">
+                            <div style="transform-origin: top center; max-width: 100%;">
+                                {svg_graph}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 30px;">
+                        <h4 style="color: #1a73e8; margin-bottom: 15px;">🔑 Key Components</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div style="background: #E3F2FD; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                    <h5 style="color: #1976D2; margin-bottom: 10px;">👤 User Interface Layer</h5>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        <li><strong>CLI (cli.py):</strong> Command-line interface for direct queries</li>
+                                        <li><strong>Web UI (Flask app.py:7000):</strong> Browser-based dashboard interface</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div style="background: #C8E6C9; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                    <h5 style="color: #388E3C; margin-bottom: 10px;">🎯 Supervisor Layer</h5>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        <li><strong>LangGraph + Claude Sonnet 4.5</strong></li>
+                                        <li>Analyzes query keywords and context</li>
+                                        <li>Routes to appropriate specialized agent</li>
+                                        <li>Can orchestrate multiple agents</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div style="background: #FFF9C4; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                    <h5 style="color: #F57C00; margin-bottom: 10px;">🤖 Specialized Agents</h5>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        <li><strong>❤️ Health Agent:</strong> Pod health, readiness, liveness checks</li>
+                                        <li><strong>📋 Describe Agent:</strong> Resource details, YAML configs, descriptions</li>
+                                        <li><strong>📊 Resources Agent:</strong> Capacity, limits, quotas, allocations</li>
+                                        <li><strong>⚙️ Operations Agent:</strong> Create, delete, scale, apply operations</li>
+                                        <li><strong>📈 Monitor Agent:</strong> Metrics, CPU, memory, Prometheus queries</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div style="background: #FFCDD2; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                    <h5 style="color: #C62828; margin-bottom: 10px;">🔌 MCP Server Layer</h5>
+                                    <ul style="margin: 0; padding-left: 20px;">
+                                        <li><strong>FastMCP Protocol:</strong> Model Context Protocol implementation</li>
+                                        <li><strong>Ports 8000-8004:</strong> Each agent has dedicated MCP server</li>
+                                        <li><strong>Tool Execution:</strong> Agents call tools via HTTP POST</li>
+                                        <li>Handles actual Kubernetes/Prometheus interactions</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div style="background: #E1BEE7; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                    <h5 style="color: #6A1B9A; margin-bottom: 10px;">💾 Data Sources</h5>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <strong>☸️ Kubernetes Cluster:</strong>
+                                            <ul style="margin: 5px 0 0 20px;">
+                                                <li>Master: k8s-master-01 (10.138.0.2)</li>
+                                                <li>Worker: k8s-worker-01 (10.138.0.3)</li>
+                                                <li>Access: SSH + kubectl commands</li>
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>📊 Prometheus Server:</strong>
+                                            <ul style="margin: 5px 0 0 20px;">
+                                                <li>VM: prometheus-monitoring-01</li>
+                                                <li>URL: http://35.233.152.108:9090</li>
+                                                <li>Exporters: node_exporter, cAdvisor, kube-state-metrics</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 30px; padding: 20px; background: #f0f7ff; border-left: 4px solid #1a73e8; border-radius: 5px;">
+                        <h4 style="color: #1a73e8; margin-bottom: 15px;">🔄 Communication Flow</h4>
+                        <ol style="margin: 0; padding-left: 20px; line-height: 2;">
+                            <li><span style="color: #2196F3;">●</span> <strong>User → Supervisor:</strong> Query submitted via CLI or Web UI</li>
+                            <li><span style="color: #4CAF50;">●</span> <strong>Supervisor → Agent:</strong> Routes based on keyword analysis</li>
+                            <li><span style="color: #FF9800;">●</span> <strong>Agent → MCP Server:</strong> HTTP POST with MCP Protocol</li>
+                            <li><span style="color: #9C27B0;">●</span> <strong>MCP → Kubernetes:</strong> SSH + kubectl commands</li>
+                            <li><span style="color: #F44336;">●</span> <strong>MCP → Prometheus:</strong> HTTP GET with PromQL queries</li>
+                            <li><strong>Response flows back:</strong> Data sources → MCP → Agent → Supervisor → User</li>
+                        </ol>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+    """
+    
+    return render_template_string(dashboard_template,
+                                title="Full Architecture - Kubernetes AI Dashboard",
+                                page="docs",
                                 page_title="",
                                 content=content,
                                 current_year=datetime.datetime.now().year,
