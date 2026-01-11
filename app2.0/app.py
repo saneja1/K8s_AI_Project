@@ -1,10 +1,13 @@
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify, request, redirect, url_for, flash
 import datetime
 import subprocess
 import json
 import os
 from dotenv import load_dotenv
 import graphviz
+
+# Flask-Login & Authentication (STEP 2)
+from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 
 # Load environment variables
 load_dotenv()
@@ -14,7 +17,34 @@ import sys
 sys.path.append(os.path.dirname(__file__))
 from agents.k8s_agent import ask_k8s_agent
 
+# Import authentication models
+from models import db, User, init_db, create_default_admin
+
 app = Flask(__name__)
+
+# STEP 2: Configure Flask app for authentication
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///k8s_dashboard.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# STEP 2: Initialize LoginManager
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'  # Redirect to login page if not authenticated
+login_manager.login_message = '⚠️ Please log in to access this page.'
+
+# STEP 2: Initialize database and create default admin
+init_db(app)
+create_default_admin(app)
+
+# STEP 2: User loader for Flask-Login
+@login_manager.user_loader
+def load_user(user_id):
+    """
+    Load user by ID from database
+    Called by Flask-Login on every request to check if user is logged in
+    """
+    return User.query.get(int(user_id))
 
 # VM Configuration - from dashboard.py
 VM_LIST = [
@@ -352,7 +382,7 @@ dashboard_template = """
             justify-content: flex-start;
             align-items: center;
             padding: 0 20px;
-            gap: 60px;
+            gap: 40px;
         }
         
         .logo {
@@ -532,6 +562,9 @@ dashboard_template = """
                     <li><a href="/pod-monitor" class="{{ 'active' if page == 'pod-monitor' else '' }}">Pod Monitor</a></li>
                     <li><a href="/docs" class="{{ 'active' if page == 'docs' else '' }}">Docs</a></li>
                     <li><a href="/faq" class="{{ 'active' if page == 'faq' else '' }}">FAQ</a></li>
+                    {% if current_user.is_admin() %}
+                    <li><a href="/user-management" class="{{ 'active' if page == 'user-management' else '' }}">👥 Users</a></li>
+                    {% endif %}
                 </ul>
             </nav>
             <button id="themeToggle" onclick="toggleTheme()" style="
@@ -547,11 +580,45 @@ dashboard_template = """
                 align-items: center;
                 gap: 8px;
                 transition: all 0.3s ease;
-                margin-left: auto;
             " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                 <span id="themeIcon">🌙</span>
                 <span id="themeText">Dark</span>
             </button>
+            
+            <!-- User Info & Logout -->
+            <div style="
+                margin-left: 20px;
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                padding-left: 20px;
+                border-left: 2px solid rgba(102, 126, 234, 0.3);
+            ">
+                <div style="
+                    text-align: right;
+                    color: var(--text-primary);
+                ">
+                    <div style="font-weight: 600; font-size: 0.9rem;">{{ current_user.username }}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.7;">
+                        {% if current_user.role == 'admin' %}👑 Admin
+                        {% elif current_user.role == 'operator' %}🔧 Operator
+                        {% else %}👁️ Viewer{% endif %}
+                    </div>
+                </div>
+                <a href="/logout" style="
+                    background: rgba(239, 68, 68, 0.1);
+                    border: 1px solid rgba(239, 68, 68, 0.3);
+                    color: #ef4444;
+                    padding: 6px 14px;
+                    border-radius: 20px;
+                    text-decoration: none;
+                    font-weight: 500;
+                    font-size: 0.85rem;
+                    transition: all 0.2s ease;
+                " onmouseover="this.style.background='#ef4444'; this.style.color='white';" onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'; this.style.color='#ef4444';">
+                    🚪 Logout
+                </a>
+            </div>
         </div>
     </header>
 
@@ -644,7 +711,267 @@ dashboard_template = """
 </html>
 """
 
+# ============================================================================
+# STEP 3: LOGIN & LOGOUT ROUTES
+# ============================================================================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """
+    Login page and authentication handler
+    
+    GET: Show login form
+    POST: Validate credentials and create session
+    """
+    # If already logged in, redirect to home
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        # Validate inputs
+        if not username or not password:
+            flash('❌ Username and password are required', 'error')
+            return redirect(url_for('login'))
+        
+        # Find user in database
+        user = User.query.filter_by(username=username).first()
+        
+        # Check credentials
+        if user and user.check_password(password):
+            # Login successful - create session
+            login_user(user, remember=True)
+            user.update_last_login()
+            
+            flash(f'✅ Welcome back, {user.username}! (Role: {user.role})', 'success')
+            
+            # Redirect to originally requested page or home
+            next_page = request.args.get('next')
+            return redirect(next_page if next_page else url_for('home'))
+        else:
+            # Login failed
+            flash('❌ Invalid username or password', 'error')
+            return redirect(url_for('login'))
+    
+    # GET request - show login form
+    login_html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - K8s Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 420px;
+        }
+        
+        .logo-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo-icon {
+            font-size: 4rem;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            font-size: 1.75rem;
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            color: #718096;
+            font-size: 0.95rem;
+        }
+        
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        
+        .flash {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .flash.error {
+            background: #fee;
+            color: #c53030;
+            border-left: 4px solid #c53030;
+        }
+        
+        .flash.success {
+            background: #efe;
+            color: #2f855a;
+            border-left: 4px solid #2f855a;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            color: #4a5568;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-login:active {
+            transform: translateY(0);
+        }
+        
+        .default-creds {
+            margin-top: 24px;
+            padding: 16px;
+            background: #fffaeb;
+            border: 1px solid #f6e05e;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #744210;
+        }
+        
+        .default-creds strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #744210;
+        }
+        
+        .default-creds code {
+            background: #fef5e7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo-section">
+            <div class="logo-icon">🔐</div>
+            <h1>K8s Dashboard</h1>
+            <p class="subtitle">Kubernetes Cluster Management</p>
+        </div>
+        
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message | safe }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus placeholder="Enter your username">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="Enter your password">
+            </div>
+            
+            <button type="submit" class="btn-login">🚀 Login</button>
+        </form>
+        
+        <div class="default-creds">
+            <strong>⚠️ Default Credentials (First Login)</strong>
+            Username: <code>admin</code><br>
+            Password: <code>admin123</code><br>
+            Role: <code>admin</code>
+        </div>
+    </div>
+</body>
+</html>
+    """
+    return render_template_string(login_html)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """
+    Logout handler - destroy session and redirect to login
+    """
+    username = current_user.username
+    logout_user()
+    flash(f'✅ Goodbye, {username}! You have been logged out.', 'success')
+    return redirect(url_for('login'))
+
+
+# ============================================================================
+# PROTECTED DASHBOARD ROUTES (Require Authentication)
+# ============================================================================
+
 @app.route('/')
+@login_required
 def home():
     return render_template_string(dashboard_template, 
                                 title="Kubernetes AI Dashboard",
@@ -653,6 +980,7 @@ def home():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/k8s-assistant')
+@login_required
 def k8s_assistant():
     content = """
     <!-- ChatGPT-style AI Assistant Interface -->
@@ -993,6 +1321,7 @@ def k8s_assistant():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/host-validator')
+@login_required
 def host_validator():
     content = """
     <div style="margin: -120px -40px -70px -40px;">
@@ -1047,6 +1376,7 @@ def host_validator():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/vm-status')
+@login_required
 def vm_status():
     # Get VM data with fetch timestamp
     fetch_time = datetime.datetime.now()
@@ -1433,6 +1763,7 @@ def vm_status():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/pod-monitor')
+@login_required
 def pod_monitor():
     # Get pod data with fetch timestamp
     pods_data, last_fetch_time = get_pods_info()
@@ -1798,6 +2129,7 @@ def pod_monitor():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/docs')
+@login_required
 def docs():
     content = """
     <div style="margin: -120px -40px -70px -40px;">
@@ -2020,6 +2352,7 @@ cd /home/saneja/K8s_AI_Project/app2.0
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/faq')
+@login_required
 def faq():
     content = """
     <div style="margin: -120px -40px -70px -40px;">
@@ -2207,6 +2540,7 @@ def faq():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/docs/full-architecture')
+@login_required
 def docs_full_architecture():
     """Full Architecture documentation subpage."""
     import graphviz
@@ -2512,6 +2846,7 @@ Content-Type: application/json
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/docs/detailed-flow')
+@login_required
 def docs_detailed_flow():
     """Detailed Flow Examples documentation subpage."""
     
@@ -3660,6 +3995,7 @@ Content-Type: application/json
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/docs/component-glossary')
+@login_required
 def docs_component_glossary():
     """Component Glossary documentation subpage."""
     
@@ -3843,6 +4179,7 @@ def docs_component_glossary():
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @app.route('/api/vm-data')
+@login_required
 def get_vm_data():
     """API endpoint to get VM data as JSON for AJAX refresh."""
     vm_data = []
@@ -3902,6 +4239,7 @@ def get_vm_data():
     })
 
 @app.route('/api/pod-data')
+@login_required
 def get_pod_data():
     """API endpoint to get pod data as JSON for AJAX refresh."""
     pods_data, last_fetch_time = get_pods_info()
@@ -3928,6 +4266,7 @@ def get_pod_data():
     })
 
 @app.route('/api/clear-logs', methods=['POST'])
+@login_required
 def clear_logs():
     """API endpoint to clear command logs."""
     global command_logs
@@ -3935,14 +4274,44 @@ def clear_logs():
     return jsonify({'status': 'success', 'message': 'Logs cleared'})
 
 @app.route('/api/kubectl', methods=['POST'])
+@login_required
 def execute_kubectl():
-    """API endpoint to execute kubectl commands."""
+    """
+    API endpoint to execute kubectl commands with RBAC protection.
+    
+    RBAC Rules:
+    - Viewers: Read-only commands (get, describe, logs)
+    - Operators: Read + safe operations (scale, rollout restart)
+    - Admins: Full access (including delete, apply)
+    """
     data = request.get_json()
-    command = data.get('command', '')
+    command = data.get('command', '').strip()
     
     if not command:
-        return jsonify({'success': False, 'error': 'No command provided'})
+        return jsonify({'success': False, 'error': 'No command provided'}), 400
     
+    # Parse command to detect operation type
+    command_lower = command.lower()
+    
+    # Destructive operations - Admin only
+    destructive_ops = ['delete', 'drain', 'cordon', 'taint', 'label --overwrite']
+    if any(op in command_lower for op in destructive_ops):
+        if not current_user.can_delete():
+            return jsonify({
+                'success': False, 
+                'error': f'❌ Admin role required for destructive operations (delete, drain, cordon). Your role: {current_user.role}'
+            }), 403
+    
+    # Write operations - Operator or Admin
+    write_ops = ['apply', 'create', 'scale', 'patch', 'edit', 'rollout', 'set']
+    if any(op in command_lower for op in write_ops):
+        if not current_user.can_operate():
+            return jsonify({
+                'success': False, 
+                'error': f'❌ Operator or Admin role required for write operations. Your role: {current_user.role}'
+            }), 403
+    
+    # Execute command (all read operations allowed for all roles)
     result = execute_kubectl_command(command)
     return jsonify(result)
 
@@ -4003,8 +4372,12 @@ def execute_kubectl_tool(command):
         return f"Error executing command: {result['error']}"
 
 @app.route('/api/chat', methods=['POST'])
+@login_required
 def chat():
-    """API endpoint for AI chat using LangGraph K8s Agent with smart caching."""
+    """
+    API endpoint for AI chat using LangGraph K8s Agent with smart caching.
+    Includes RBAC protection for write and delete operations.
+    """
     try:
         data = request.get_json()
         message = data.get('message', '')
@@ -4012,6 +4385,27 @@ def chat():
         
         if not message:
             return jsonify({'success': False, 'error': 'No message provided'})
+        
+        # ===== RBAC PERMISSION CHECKS =====
+        message_lower = message.lower()
+        
+        # Detect destructive operations - Admin only
+        destructive_keywords = ['delete', 'drain', 'cordon', 'remove']
+        if any(keyword in message_lower for keyword in destructive_keywords):
+            if not current_user.can_delete():
+                return jsonify({
+                    'success': False, 
+                    'error': f'🔒 <strong>Admin role required</strong><br><br>Your role (<strong>{current_user.role}</strong>) cannot perform destructive operations like delete, drain, or cordon.<br><br>Contact an administrator for assistance.'
+                }), 403
+        
+        # Detect write operations - Operator or Admin
+        write_keywords = ['scale', 'restart', 'rollout', 'patch', 'apply', 'create', 'set', 'edit', 'update']
+        if any(keyword in message_lower for keyword in write_keywords):
+            if not current_user.can_operate():
+                return jsonify({
+                    'success': False, 
+                    'error': f'🔒 <strong>Operator or Admin role required</strong><br><br>Your role (<strong>{current_user.role}</strong>) is read-only and cannot perform write operations like scale, restart, or apply changes.<br><br>Contact an administrator to upgrade your permissions.'
+                }), 403
         
         # Get Anthropic API key
         anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -4056,6 +4450,372 @@ def chat():
             
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+# ============================================================================
+# USER MANAGEMENT ROUTES (Admin Only)
+# ============================================================================
+
+@app.route('/user-management')
+@login_required
+def user_management():
+    """
+    User Management page - Admin only
+    Allows creating, editing, and deleting users
+    """
+    # Check if user is admin
+    if not current_user.is_admin():
+        flash('❌ Admin access required for User Management', 'error')
+        return redirect(url_for('home'))
+    
+    # Get all users from database
+    users = User.query.all()
+    
+    content = f"""
+    <div style="margin: -120px -40px -70px -40px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; text-align: center;">
+            <h2 style="margin: 0; font-size: 2rem; font-weight: 600; color: white;">👥 User Management</h2>
+            <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 1rem; color: white;">Manage users and access permissions</p>
+        </div>
+        
+        <div style="padding: 30px; background: white;">
+            
+            <!-- Add New User Button -->
+            <div style="margin-bottom: 30px;">
+                <button onclick="showAddUserModal()" style="
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                    ➕ Add New User
+                </button>
+            </div>
+            
+            <!-- Users Table -->
+            <div style="overflow-x: auto; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <table style="width: 100%; border-collapse: collapse; background: white;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">ID</th>
+                            <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Username</th>
+                            <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Role</th>
+                            <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Created At</th>
+                            <th style="padding: 15px; text-align: left; color: white; font-weight: 600;">Last Login</th>
+                            <th style="padding: 15px; text-align: center; color: white; font-weight: 600;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {''.join([f'''
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 15px; color: #2d3748;">{user.id}</td>
+                            <td style="padding: 15px; color: #2d3748; font-weight: 600;">{user.username}</td>
+                            <td style="padding: 15px;">
+                                <span style="
+                                    display: inline-block;
+                                    padding: 4px 12px;
+                                    border-radius: 12px;
+                                    font-size: 0.85rem;
+                                    font-weight: 600;
+                                    background: {'#fef3c7' if user.role == 'admin' else '#dbeafe' if user.role == 'operator' else '#f3f4f6'};
+                                    color: {'#92400e' if user.role == 'admin' else '#1e40af' if user.role == 'operator' else '#374151'};
+                                ">
+                                    {'👑 ' if user.role == 'admin' else '🔧 ' if user.role == 'operator' else '👁️ '}{user.role.capitalize()}
+                                </span>
+                            </td>
+                            <td style="padding: 15px; color: #718096; font-size: 0.9rem;">{user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A'}</td>
+                            <td style="padding: 15px; color: #718096; font-size: 0.9rem;">{user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never'}</td>
+                            <td style="padding: 15px; text-align: center;">
+                                <button onclick="changePassword({user.id}, '{user.username}')" style="
+                                    background: #3b82f6;
+                                    color: white;
+                                    border: none;
+                                    padding: 6px 12px;
+                                    border-radius: 6px;
+                                    margin-right: 8px;
+                                    cursor: pointer;
+                                    font-size: 0.85rem;
+                                ">🔑 Password</button>
+                                {'<button onclick="deleteUser(' + str(user.id) + ', \'' + user.username + '\')" style="background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">🗑️ Delete</button>' if user.id != current_user.id else '<span style="color: #9ca3af; font-size: 0.85rem;">(Current User)</span>'}
+                            </td>
+                        </tr>
+                        ''' for user in users])}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Stats -->
+            <div style="margin-top: 30px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #92400e;">{sum(1 for u in users if u.role == 'admin')}</div>
+                    <div style="color: #92400e; font-weight: 600; margin-top: 5px;">👑 Admins</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #1e40af;">{sum(1 for u in users if u.role == 'operator')}</div>
+                    <div style="color: #1e40af; font-weight: 600; margin-top: 5px;">🔧 Operators</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #f3f4f6, #e5e7eb); padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #374151;">{sum(1 for u in users if u.role == 'viewer')}</div>
+                    <div style="color: #374151; font-weight: 600; margin-top: 5px;">👁️ Viewers</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add User Modal -->
+    <div id="addUserModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 16px; max-width: 500px; width: 90%;">
+            <h3 style="margin: 0 0 20px 0; color: #2d3748;">➕ Add New User</h3>
+            <form id="addUserForm">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #4a5568; font-weight: 600; margin-bottom: 5px;">Username</label>
+                    <input type="text" id="newUsername" required style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; color: #4a5568; font-weight: 600; margin-bottom: 5px;">Password</label>
+                    <input type="password" id="newPassword" required style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #4a5568; font-weight: 600; margin-bottom: 5px;">Role</label>
+                    <select id="newRole" style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                        <option value="viewer">👁️ Viewer (Read-only)</option>
+                        <option value="operator">🔧 Operator (Read + Write)</option>
+                        <option value="admin">👑 Admin (Full access)</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" style="flex: 1; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">Create User</button>
+                    <button type="button" onclick="closeAddUserModal()" style="flex: 1; background: #e5e7eb; color: #4a5568; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 16px; max-width: 500px; width: 90%;">
+            <h3 style="margin: 0 0 20px 0; color: #2d3748;">🔑 Change Password</h3>
+            <p style="color: #718096; margin-bottom: 20px;">Changing password for: <strong id="changePasswordUsername"></strong></p>
+            <form id="changePasswordForm">
+                <input type="hidden" id="changePasswordUserId">
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; color: #4a5568; font-weight: 600; margin-bottom: 5px;">New Password</label>
+                    <input type="password" id="changePasswordNew" required style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" style="flex: 1; background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">Update Password</button>
+                    <button type="button" onclick="closeChangePasswordModal()" style="flex: 1; background: #e5e7eb; color: #4a5568; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // Add User Modal Functions
+        function showAddUserModal() {{
+            document.getElementById('addUserModal').style.display = 'flex';
+        }}
+        
+        function closeAddUserModal() {{
+            document.getElementById('addUserModal').style.display = 'none';
+            document.getElementById('addUserForm').reset();
+        }}
+        
+        // Change Password Modal Functions
+        function changePassword(userId, username) {{
+            document.getElementById('changePasswordUserId').value = userId;
+            document.getElementById('changePasswordUsername').textContent = username;
+            document.getElementById('changePasswordModal').style.display = 'flex';
+        }}
+        
+        function closeChangePasswordModal() {{
+            document.getElementById('changePasswordModal').style.display = 'none';
+            document.getElementById('changePasswordForm').reset();
+        }}
+        
+        // Add User Form Submit
+        document.getElementById('addUserForm').addEventListener('submit', async (e) => {{
+            e.preventDefault();
+            
+            const username = document.getElementById('newUsername').value;
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+            
+            try {{
+                const response = await fetch('/api/users/create', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{username, password, role}})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    alert('✅ User created successfully!');
+                    location.reload();
+                }} else {{
+                    alert('❌ Error: ' + data.error);
+                }}
+            }} catch (error) {{
+                alert('❌ Error creating user: ' + error.message);
+            }}
+        }});
+        
+        // Change Password Form Submit
+        document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {{
+            e.preventDefault();
+            
+            const userId = document.getElementById('changePasswordUserId').value;
+            const newPassword = document.getElementById('changePasswordNew').value;
+            
+            try {{
+                const response = await fetch(`/api/users/${{userId}}/change-password`, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{password: newPassword}})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    alert('✅ Password updated successfully!');
+                    closeChangePasswordModal();
+                }} else {{
+                    alert('❌ Error: ' + data.error);
+                }}
+            }} catch (error) {{
+                alert('❌ Error changing password: ' + error.message);
+            }}
+        }});
+        
+        // Delete User Function
+        async function deleteUser(userId, username) {{
+            if (!confirm(`⚠️ Are you sure you want to delete user "${{username}}"?\\n\\nThis action cannot be undone.`)) {{
+                return;
+            }}
+            
+            try {{
+                const response = await fetch(`/api/users/${{userId}}`, {{
+                    method: 'DELETE'
+                }});
+                
+                const data = await response.json();
+                
+                if (data.success) {{
+                    alert('✅ User deleted successfully!');
+                    location.reload();
+                }} else {{
+                    alert('❌ Error: ' + data.error);
+                }}
+            }} catch (error) {{
+                alert('❌ Error deleting user: ' + error.message);
+            }}
+        }}
+    </script>
+    """
+    
+    return render_template_string(dashboard_template, 
+                                title="User Management",
+                                page="user-management",
+                                content=content,
+                                current_year=datetime.datetime.now().year,
+                                current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+@app.route('/api/users/create', methods=['POST'])
+@login_required
+def api_create_user():
+    """Create a new user - Admin only"""
+    if not current_user.is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    role = data.get('role', 'viewer')
+    
+    # Validate inputs
+    if not username or not password:
+        return jsonify({'success': False, 'error': 'Username and password are required'}), 400
+    
+    if role not in ['viewer', 'operator', 'admin']:
+        return jsonify({'success': False, 'error': 'Invalid role'}), 400
+    
+    # Check if username already exists
+    if User.query.filter_by(username=username).first():
+        return jsonify({'success': False, 'error': 'Username already exists'}), 400
+    
+    try:
+        # Create new user
+        new_user = User(username=username, role=role)
+        new_user.set_password(password)
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'User {username} created successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/users/<int:user_id>/change-password', methods=['POST'])
+@login_required
+def api_change_password(user_id):
+    """Change user password - Admin only"""
+    if not current_user.is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    data = request.get_json()
+    new_password = data.get('password', '')
+    
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Password is required'}), 400
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    try:
+        user.set_password(new_password)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Password updated for {user.username}'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+def api_delete_user(user_id):
+    """Delete a user - Admin only"""
+    if not current_user.is_admin():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+    
+    # Cannot delete yourself
+    if user_id == current_user.id:
+        return jsonify({'success': False, 'error': 'Cannot delete your own account'}), 400
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    try:
+        username = user.username
+        db.session.delete(user)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'User {username} deleted successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     import socket
