@@ -376,13 +376,13 @@ dashboard_template = """
         }
         
         .header-content {
-            max-width: 1400px;
-            margin: 0 auto;
+            max-width: 100%;
+            margin: 0;
             display: flex;
             justify-content: flex-start;
             align-items: center;
             padding: 0 20px;
-            gap: 40px;
+            gap: 15px;
         }
         
         .logo {
@@ -393,6 +393,7 @@ dashboard_template = """
             align-items: center;
             white-space: nowrap;
             flex-shrink: 0;
+            margin-right: 30px;
         }
         
         .logo::before {
@@ -403,17 +404,27 @@ dashboard_template = """
         
         .nav-menu {
             display: flex;
-            gap: 20px;
+            gap: 8px;
             list-style: none;
+            margin-right: auto;
+            flex-wrap: nowrap;
+            align-items: center;
+        }
+        
+        .nav-menu li {
+            flex-shrink: 0;
         }
         
         .nav-menu a {
             text-decoration: none;
             color: var(--text-primary);
             font-weight: 500;
-            padding: 8px 16px;
+            padding: 8px 12px;
             border-radius: 8px;
             transition: all 0.3s ease;
+            display: inline-block;
+            white-space: nowrap;
+            font-size: 0.9rem;
         }
         
         .nav-menu a:hover, .nav-menu a.active {
@@ -598,7 +609,7 @@ dashboard_template = """
                     text-align: right;
                     color: var(--text-primary);
                 ">
-                    <div style="font-weight: 600; font-size: 0.9rem;">{{ current_user.username }}</div>
+                    <div style="font-weight: 600; font-size: 0.9rem;">{{ current_user.username.capitalize() }}</div>
                     <div style="font-size: 0.75rem; opacity: 0.7;">
                         {% if current_user.role == 'admin' %}👑 Admin
                         {% elif current_user.role == 'operator' %}🔧 Operator
@@ -744,8 +755,6 @@ def login():
             # Login successful - create session
             login_user(user, remember=True)
             user.update_last_login()
-            
-            flash(f'✅ Welcome back, {user.username}! (Role: {user.role})', 'success')
             
             # Redirect to originally requested page or home
             next_page = request.args.get('next')
@@ -906,6 +915,34 @@ def login():
             border-radius: 4px;
             font-family: 'Courier New', monospace;
         }
+        
+        .guest-login-section {
+            margin-top: 20px;
+            padding: 16px;
+            background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+            border: 2px solid #0ea5e9;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .btn-guest {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #0ea5e9, #0284c7);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+        
+        .btn-guest:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -927,31 +964,63 @@ def login():
             {% endif %}
         {% endwith %}
         
-        <form method="POST" action="{{ url_for('login') }}">
+        <!-- Guest Access Section (Top) -->
+        <div class="guest-login-section">
+            <strong style="color: #0c4a6e; font-size: 0.95rem;">👤 Guest Access (No Login Required)</strong>
+            <p style="margin: 8px 0; color: #0c4a6e; font-size: 0.85rem;">
+                Browse the dashboard with read-only access
+            </p>
+            <form method="GET" action="{{ url_for('guest_login') }}">
+                <button type="submit" class="btn-guest">
+                    🌐 Continue as Guest
+                </button>
+            </form>
+        </div>
+        
+        <!-- OR Divider -->
+        <div style="text-align: center; margin: 20px 0; color: #718096; font-size: 0.9rem; font-weight: 600;">
+            OR
+        </div>
+        
+        <!-- Regular Login Form -->
+        <form method="POST" action="{{ url_for('login') }}" autocomplete="off">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus placeholder="Enter your username">
+                <input type="text" id="username" name="username" required placeholder="Enter your username" autocomplete="off">
             </div>
             
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required placeholder="Enter your password">
+                <input type="password" id="password" name="password" required placeholder="Enter your password" autocomplete="new-password">
             </div>
             
             <button type="submit" class="btn-login">🚀 Login</button>
         </form>
-        
-        <div class="default-creds">
-            <strong>⚠️ Default Credentials (First Login)</strong>
-            Username: <code>admin</code><br>
-            Password: <code>admin123</code><br>
-            Role: <code>admin</code>
-        </div>
     </div>
 </body>
 </html>
     """
     return render_template_string(login_html)
+
+
+@app.route('/guest-login')
+def guest_login():
+    """
+    Guest login - automatic login without credentials
+    Logs in as 'guest' user with viewer (read-only) permissions
+    """
+    # Find guest user
+    guest_user = User.query.filter_by(username='guest').first()
+    
+    if not guest_user:
+        flash('❌ Guest user not found. Please contact administrator.', 'error')
+        return redirect(url_for('login'))
+    
+    # Login guest user
+    login_user(guest_user, remember=False)
+    guest_user.update_last_login()
+    
+    return redirect(url_for('home'))
 
 
 @app.route('/logout')
@@ -962,7 +1031,6 @@ def logout():
     """
     username = current_user.username
     logout_user()
-    flash(f'✅ Goodbye, {username}! You have been logged out.', 'success')
     return redirect(url_for('login'))
 
 

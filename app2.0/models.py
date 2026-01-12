@@ -141,3 +141,30 @@ def create_default_admin(app):
             print("=" * 60)
         else:
             print(f"✅ Found {User.query.count()} existing user(s) in database")
+        
+        # Always ensure guest user exists
+        create_guest_user(app)
+
+
+def create_guest_user(app):
+    """
+    Create or update guest user for anonymous access
+    
+    Guest credentials (NO PASSWORD REQUIRED):
+    Username: guest
+    Role: viewer (read-only)
+    
+    This runs automatically on startup
+    """
+    with app.app_context():
+        guest = User.query.filter_by(username='guest').first()
+        
+        if guest is None:
+            # Create new guest user
+            guest = User(username='guest', role='viewer')
+            guest.set_password('guest123')  # Password not used, but required by model
+            
+            db.session.add(guest)
+            db.session.commit()
+            
+            print("✅ Guest user created (username: guest, role: viewer)")
