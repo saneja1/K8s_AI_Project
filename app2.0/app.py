@@ -1576,6 +1576,20 @@ def host_validator():
         // Update username
         document.getElementById('usernameInput').value = config.defaultUsername;
         
+        // Update authentication method dropdown
+        const authMethodSelect = document.getElementById('authMethod');
+        const authMethodLabels = {
+            'password': 'Password',
+            'key': 'SSH Key',
+            'gcloud': 'GCloud CLI',
+            'aws-cli': 'AWS CLI',
+            'azure-cli': 'Azure CLI'
+        };
+        authMethodSelect.innerHTML = config.authMethods.map(method => 
+            `<option value="${method}">${authMethodLabels[method]}</option>`
+        ).join('');
+        updateAuthFields();
+        
         // Update zone section
         const zoneSection = document.getElementById('zoneSection');
         if (config.hasZone) {
@@ -1606,17 +1620,23 @@ def host_validator():
         const keyPathInput = document.getElementById('keyPathInput');
         const authInputLabel = document.getElementById('authInputLabel');
         const showPasswordBtn = document.getElementById('showPasswordBtn');
+        const authInputSection = document.getElementById('authInputSection');
         
         if (authMethod === 'password') {
+            authInputSection.style.display = 'block';
             authInputLabel.textContent = 'SSH Password';
             passwordInput.style.display = 'block';
             keyPathInput.style.display = 'none';
             showPasswordBtn.style.display = 'block';
-        } else {
+        } else if (authMethod === 'key') {
+            authInputSection.style.display = 'block';
             authInputLabel.textContent = 'SSH Key Path';
             passwordInput.style.display = 'none';
             keyPathInput.style.display = 'block';
             showPasswordBtn.style.display = 'none';
+        } else {
+            // CLI auth methods (gcloud, aws-cli, azure-cli)
+            authInputSection.style.display = 'none';
         }
     }
     
@@ -4663,7 +4683,106 @@ def validate_host():
             'execution_log': []
         }
         
-        # SSH Connection
+        # Handle Google Cloud VMs using gcloud CLI
+        if vm_type == 'gcp' and auth_method == 'gcloud':
+            if not zone:
+                return jsonify({
+                    'success': False,
+                    'error': 'Zone is required for Google Cloud VMs'
+                }), 400
+            
+            try:
+                # Set GCloud project first
+                project_id = 'project-f972fc71-9c5d-48d5-99f'
+                subprocess.run(['gcloud', 'config', 'set', 'project', project_id], capture_output=True, timeout=5)
+                
+                # CPU check using gcloud ssh
+                cpu_cmd = ['gcloud', 'compute', 'ssh', f'{username}@{host}', '--zone', zone, '--command', 'nproc', '--quiet']
+                cpu_result = subprocess.run(cpu_cmd, capture_output=True, text=True, timeout=15)
+                if cpu_result.returncode == 0 and cpu_result.stdout.strip().isdigit():
+                    result['cpu_cores'] = int(cpu_result.stdout.strip())
+                    result['execution_log'].append({
+                        'command': f'gcloud compute ssh {username}@{host} --command="nproc"',
+                        'output': cpu_result.stdout.strip(),
+                        'status': 'success'
+                    })
+                else:
+                    result['execution_log'].append({
+                        'command': 'CPU check',
+                        'output': cpu_result.stdout,
+                        'status': 'error',
+                        'error': cpu_result.stderr
+                    })
+                
+                if result['cpu_cores'] < min_cpu:
+                    result['failures'].append(f"CPU cores: {result['cpu_cores']} < {min_cpu} required")
+                
+                # Memory check
+                mem_cmd = ['gcloud', 'compute', 'ssh', f'{username}@{host}', '--zone', zone, '--command', "awk '/MemTotal/ {printf \"%.0f\", $2/1024}' /proc/meminfo", '--quiet']
+                mem_result = subprocess.run(mem_cmd, capture_output=True, text=True, timeout=15)
+                if mem_result.returncode == 0 and mem_result.stdout.strip().isdigit():
+                    result['memory_mib'] = int(mem_result.stdout.strip())
+                    result['execution_log'].append({
+                        'command': f'gcloud compute ssh {username}@{host} --command="awk /MemTotal/ ..."',
+                        'output': mem_result.stdout.strip(),
+                        'status': 'success'
+                    })
+                else:
+                    result['execution_log'].append({
+                        'command': 'Memory check',
+                        'output': mem_result.stdout,
+                        'status': 'error',
+                        'error': mem_result.stderr
+                    })
+                
+                if result['memory_mib'] < min_memory:
+                    result['failures'].append(f"Memory: {result['memory_mib']} MiB < {min_memory} MiB required")
+                
+                # Disk check
+                disk_cmd = ['gcloud', 'compute', 'ssh', f'{username}@{host}', '--zone', zone, '--command', "df -BG / | tail -1 | awk '{print $4}' | sed 's/G//'", '--quiet']
+                disk_result = subprocess.run(disk_cmd, capture_output=True, text=True, timeout=15)
+                if disk_result.returncode == 0 and disk_result.stdout.strip().replace('.', '').isdigit():
+                    gb = float(disk_result.stdout.strip())
+                    result['disk_gib_free'] = int(gb / 1.073741824)
+                    result['execution_log'].append({
+                        'command': f'gcloud compute ssh {username}@{host} --command="df -BG /"',
+                        'output': disk_result.stdout.strip(),
+                        'status': 'success'
+                    })
+                else:
+                    result['execution_log'].append({
+                        'command': 'Disk check',
+                        'output': disk_result.stdout,
+                        'status': 'error',
+                        'error': disk_result.stderr
+                    })
+                
+                if result['disk_gib_free'] < min_disk:
+                    result['failures'].append(f"Disk space: {result['disk_gib_free']} GiB < {min_disk} GiB required")
+                
+                result['success'] = len(result['failures']) == 0
+                return jsonify(result)
+                
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    'success': False,
+                    'error': f'Timeout connecting to {host} via gcloud',
+                    'cpu_cores': 0,
+                    'memory_mib': 0,
+                    'disk_gib_free': 0,
+                    'failures': []
+                })
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'GCloud SSH error: {str(e)}',
+                    'cpu_cores': 0,
+                    'memory_mib': 0,
+                    'disk_gib_free': 0,
+                    'failures': []
+                })
+        
+        # Direct SSH Connection (original code)
         ssh_client = None
         try:
             ssh_client = paramiko.SSHClient()
