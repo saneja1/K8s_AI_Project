@@ -5,6 +5,8 @@ import json
 import os
 from dotenv import load_dotenv
 import graphviz
+import paramiko
+import re
 
 # Flask-Login & Authentication (STEP 2)
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
@@ -339,11 +341,6 @@ dashboard_template = """
             background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
             transition: all 0.3s ease;
-        }
-        
-        /* Force black text for all content except nav menu and page headers */
-        .content-area, .content-area * {
-            color: #000000 !important;
         }
         
         /* Ensure nav menu uses theme colors */
@@ -1396,44 +1393,427 @@ def host_validator():
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
         <div>
             <h3 style="margin: 0; font-size: 1.2rem; color: white;">✅ Host Validator</h3>
-            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem; color: white;">Validate server requirements for Kubernetes</p>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9rem; color: white;">This tool checks if a server meets the minimum requirements to join a Kubernetes cluster.</p>
         </div>
     </div>
-    <div style="padding: 30px;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 0;">
-        <div style="padding: 20px; background: #f0fff4; border-radius: 8px; border: 1px solid #9ae6b4;">
-            <h3>System Requirements</h3>
-            <ul style="list-style: none; padding: 0; margin-top: 15px;">
-                <li style="margin: 8px 0;"><span class="status-indicator status-online"></span>CPU: 2+ cores</li>
-                <li style="margin: 8px 0;"><span class="status-indicator status-online"></span>RAM: 4GB+ available</li>
-                <li style="margin: 8px 0;"><span class="status-indicator status-online"></span>Disk: 20GB+ free</li>
-                <li style="margin: 8px 0;"><span class="status-indicator status-online"></span>Network: Internet access</li>
-            </ul>
-        </div>
-        <div style="padding: 20px; background: #fffaf0; border-radius: 8px; border: 1px solid #fbd38d;">
-            <h3>Validation Status</h3>
-            <div style="margin-top: 15px;">
-                <div style="margin: 10px 0;">
-                    <strong>Last Check:</strong> 2024-10-25 14:30:00
-                </div>
-                <div style="margin: 10px 0;">
-                    <span class="status-indicator status-warning"></span>Pending Validation
-                </div>
-                <button class="card-button" style="margin-top: 15px; width: 100%;">Run Validation</button>
+    <div style="padding: 30px; background: #000000;">
+    
+    <h2 style="color: #ffffff; margin-bottom: 25px;">Does this server meet minimum cluster requirements?</h2>
+    
+    <!-- VM Configuration Section -->
+    <div style="margin-bottom: 30px; padding: 25px; background: #1a1a1a; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+        <h3 style="margin-top: 0; color: #ffffff; margin-bottom: 20px; font-weight: 600;">VM Configuration</h3>
+        
+        <!-- VM Type Dropdown -->
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;">VM Type</label>
+            <div style="position: relative;">
+                <select id="vmType" onchange="updateVMTypeFields()" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px; appearance: none; cursor: pointer;">
+                    <option value="standalone">Standalone Server</option>
+                    <option value="gcp">GCP VM</option>
+                    <option value="azure">Azure VM</option>
+                    <option value="aws">AWS VM</option>
+                </select>
+                <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #a0aec0;">▼</div>
             </div>
         </div>
-    </div>
-    <div style="margin-top: 30px; padding: 25px; background: #f7fafc; border-radius: 8px;">
-        <h3>Host Configuration</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-            <input type="text" placeholder="Host IP Address" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px;">
-            <input type="text" placeholder="SSH Username" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px;">
-            <input type="password" placeholder="SSH Password" style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px;">
-            <button class="card-button">Validate Host</button>
+        
+        <!-- Zone/Region Section (hidden by default, shown for cloud providers) -->
+        <div id="zoneSection" style="display: none; margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;" id="zoneLabel">Zone/Region</label>
+            <select id="vmZone" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px;">
+                <!-- Options populated by JavaScript -->
+            </select>
+        </div>
+        
+        <!-- Two Column Layout -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <!-- Host IP/DNS -->
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;">Host IP/DNS</label>
+                <input type="text" id="hostInput" placeholder="localhost" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px;">
+            </div>
+            
+            <!-- Authentication Method -->
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;">Authentication Method</label>
+                <div style="position: relative;">
+                    <select id="authMethod" onchange="updateAuthFields()" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px; appearance: none; cursor: pointer;">
+                        <option value="password">Password</option>
+                        <option value="key">SSH Key</option>
+                    </select>
+                    <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #a0aec0;">▼</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <!-- SSH Username -->
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;">SSH Username</label>
+                <input type="text" id="usernameInput" value="root" placeholder="root" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px;">
+            </div>
+            
+            <!-- SSH Password / SSH Key Path -->
+            <div id="authInputSection">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;" id="authInputLabel">SSH Password</label>
+                <div style="position: relative;">
+                    <input type="password" id="passwordInput" placeholder="••••••••" style="width: 100%; padding: 14px; padding-right: 45px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px;">
+                    <input type="text" id="keyPathInput" placeholder="~/.ssh/id_rsa" style="width: 100%; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px; display: none;">
+                    <button onclick="togglePassword()" id="showPasswordBtn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #a0aec0; cursor: pointer; padding: 5px;">👁</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- SSH Port -->
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #ffffff; font-size: 14px;">SSH Port</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="number" id="sshPort" value="22" min="1" max="65535" style="flex: 1; padding: 14px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; font-size: 15px;">
+                <button onclick="decrementPort()" style="width: 40px; height: 48px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; cursor: pointer; font-size: 18px;">−</button>
+                <button onclick="incrementPort()" style="width: 40px; height: 48px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 8px; cursor: pointer; font-size: 18px;">+</button>
+            </div>
+        </div>
+        
+        <!-- Info Box -->
+        <div id="connectionInfo" style="padding: 14px; background: rgba(66, 153, 225, 0.15); border: 1px solid rgba(66, 153, 225, 0.3); border-radius: 8px; color: #90cdf4; font-size: 14px; display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 18px;">ℹ️</span>
+            <span>Standard SSH connection</span>
         </div>
     </div>
+    
+    <!-- Minimum Requirements Section -->
+    <div style="margin-bottom: 30px; padding: 25px; background: #1a1a1a; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+        <h3 style="margin-top: 0; color: #ffffff; margin-bottom: 20px; font-weight: 600;">Minimum Requirements:</h3>
+        
+        <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="margin-bottom: 15px; color: #ffffff; display: flex; align-items: center; gap: 10px;">
+                <span style="width: 6px; height: 6px; background: #4299e1; border-radius: 50%;"></span>
+                <strong style="color: #ffffff;">CPU cores:</strong>
+                <input type="number" id="minCPU" value="1" min="1" max="128" style="width: 80px; padding: 6px 10px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 6px; font-size: 14px; margin-left: auto;">
+            </li>
+            <li style="margin-bottom: 15px; color: #ffffff; display: flex; align-items: center; gap: 10px;">
+                <span style="width: 6px; height: 6px; background: #4299e1; border-radius: 50%;"></span>
+                <strong style="color: #ffffff;">Memory:</strong>
+                <input type="number" id="minMemory" value="1024" min="512" max="1048576" style="width: 100px; padding: 6px 10px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 6px; font-size: 14px; margin-left: auto;">
+                <span style="color: #ffffff;">MiB</span>
+                <span style="color: #cccccc;">(<span id="memoryInGiB">1.0</span> GiB)</span>
+            </li>
+            <li style="color: #ffffff; display: flex; align-items: center; gap: 10px;">
+                <span style="width: 6px; height: 6px; background: #4299e1; border-radius: 50%;"></span>
+                <strong style="color: #ffffff;">Disk space (root /):</strong>
+                <input type="number" id="minDisk" value="2" min="1" max="10000" style="width: 80px; padding: 6px 10px; background: #2d3748; color: #e2e8f0; border: 1px solid #4a5568; border-radius: 6px; font-size: 14px; margin-left: auto;">
+                <span style="color: #ffffff;">GiB free</span>
+            </li>
+        </ul>
+    </div>
+    
+    <!-- Validate Button -->
+    <div style="text-align: center; margin-top: 30px;">
+        <button onclick="validateHost()" style="
+            padding: 16px 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        " onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(102, 126, 234, 0.5)'"
+           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 20px rgba(102, 126, 234, 0.4)'">
+            🔍 Validate Host
+        </button>
+    </div>
+    
+    <!-- Results Section -->
+    <div id="resultsSection" style="display: none; margin-top: 30px;">
+        <!-- Results will be dynamically inserted here -->
+    </div>
+    
     </div>
     </div>
+    
+    <script>
+    const vmTypeConfig = {
+        standalone: {
+            name: 'Standalone Server',
+            authMethods: ['password', 'key'],
+            defaultUsername: 'root',
+            hasZone: false
+        },
+        gcp: {
+            name: 'GCP VM',
+            authMethods: ['password', 'key', 'gcloud'],
+            zones: ['us-central1-a', 'us-central1-b', 'us-central1-c', 'us-central1-f', 'us-east1-a', 'us-east1-b', 'us-west1-a', 'europe-west1-b', 'asia-east1-a'],
+            defaultUsername: 'swinvm15',
+            hasZone: true,
+            zoneLabel: 'Zone'
+        },
+        aws: {
+            name: 'AWS VM',
+            authMethods: ['password', 'key', 'aws-cli'],
+            zones: ['us-east-1', 'us-east-2', 'us-west-1', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-south-1'],
+            defaultUsername: 'ec2-user',
+            hasZone: true,
+            zoneLabel: 'Region'
+        },
+        azure: {
+            name: 'Azure VM',
+            authMethods: ['password', 'key', 'azure-cli'],
+            zones: ['eastus', 'eastus2', 'westus', 'westus2', 'centralus', 'northeurope', 'westeurope', 'southeastasia'],
+            defaultUsername: 'azureuser',
+            hasZone: true,
+            zoneLabel: 'Region'
+        }
+    };
+    
+    function updateVMTypeFields() {
+        const vmType = document.getElementById('vmType').value;
+        const config = vmTypeConfig[vmType];
+        
+        // Update username
+        document.getElementById('usernameInput').value = config.defaultUsername;
+        
+        // Update zone section
+        const zoneSection = document.getElementById('zoneSection');
+        if (config.hasZone) {
+            zoneSection.style.display = 'block';
+            document.getElementById('zoneLabel').textContent = config.zoneLabel;
+            const zoneSelect = document.getElementById('vmZone');
+            zoneSelect.innerHTML = config.zones.map(z => `<option value="${z}">${z}</option>`).join('');
+        } else {
+            zoneSection.style.display = 'none';
+        }
+        
+        // Update connection info
+        const info = document.getElementById('connectionInfo');
+        if (vmType === 'standalone') {
+            info.innerHTML = '<span style="font-size: 18px;">ℹ️</span><span>Standard SSH connection</span>';
+        } else if (vmType === 'gcp') {
+            info.innerHTML = '<span style="font-size: 18px;">☁️</span><span>Google Cloud Platform VM connection</span>';
+        } else if (vmType === 'aws') {
+            info.innerHTML = '<span style="font-size: 18px;">🟧</span><span>Amazon Web Services EC2 connection</span>';
+        } else if (vmType === 'azure') {
+            info.innerHTML = '<span style="font-size: 18px;">🔷</span><span>Microsoft Azure VM connection</span>';
+        }
+    }
+    
+    function updateAuthFields() {
+        const authMethod = document.getElementById('authMethod').value;
+        const passwordInput = document.getElementById('passwordInput');
+        const keyPathInput = document.getElementById('keyPathInput');
+        const authInputLabel = document.getElementById('authInputLabel');
+        const showPasswordBtn = document.getElementById('showPasswordBtn');
+        
+        if (authMethod === 'password') {
+            authInputLabel.textContent = 'SSH Password';
+            passwordInput.style.display = 'block';
+            keyPathInput.style.display = 'none';
+            showPasswordBtn.style.display = 'block';
+        } else {
+            authInputLabel.textContent = 'SSH Key Path';
+            passwordInput.style.display = 'none';
+            keyPathInput.style.display = 'block';
+            showPasswordBtn.style.display = 'none';
+        }
+    }
+    
+    function togglePassword() {
+        const passwordInput = document.getElementById('passwordInput');
+        const btn = document.getElementById('showPasswordBtn');
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            btn.textContent = '👁‍🗨';
+        } else {
+            passwordInput.type = 'password';
+            btn.textContent = '👁';
+        }
+    }
+    
+    function incrementPort() {
+        const portInput = document.getElementById('sshPort');
+        if (parseInt(portInput.value) < 65535) {
+            portInput.value = parseInt(portInput.value) + 1;
+        }
+    }
+    
+    function decrementPort() {
+        const portInput = document.getElementById('sshPort');
+        if (parseInt(portInput.value) > 1) {
+            portInput.value = parseInt(portInput.value) - 1;
+        }
+    }
+    
+    // Update memory GiB display when memory input changes
+    document.addEventListener('DOMContentLoaded', function() {
+        const memoryInput = document.getElementById('minMemory');
+        memoryInput.addEventListener('input', function() {
+            const gib = (parseInt(this.value) / 1024).toFixed(1);
+            document.getElementById('memoryInGiB').textContent = gib;
+        });
+    });
+    
+    function validateHost() {
+        // Collect form data
+        const vmType = document.getElementById('vmType').value;
+        const host = document.getElementById('hostInput').value.trim();
+        const username = document.getElementById('usernameInput').value.trim();
+        const authMethod = document.getElementById('authMethod').value;
+        const password = document.getElementById('passwordInput').value;
+        const keyPath = document.getElementById('keyPathInput').value.trim();
+        const sshPort = parseInt(document.getElementById('sshPort').value);
+        const zone = document.getElementById('vmZone').value;
+        
+        const minCPU = parseInt(document.getElementById('minCPU').value);
+        const minMemory = parseInt(document.getElementById('minMemory').value);
+        const minDisk = parseInt(document.getElementById('minDisk').value);
+        
+        // Validation
+        if (!host) {
+            alert('❌ Please enter a host/IP address');
+            return;
+        }
+        if (!username) {
+            alert('❌ Please enter a username');
+            return;
+        }
+        if (authMethod === 'password' && !password) {
+            alert('❌ Please enter a password');
+            return;
+        }
+        if (authMethod === 'key' && !keyPath) {
+            alert('❌ Please enter SSH key path');
+            return;
+        }
+        
+        // Show loading state
+        const resultsSection = document.getElementById('resultsSection');
+        resultsSection.style.display = 'block';
+        resultsSection.innerHTML = `
+            <div style="padding: 30px; background: #1a1a1a; border-radius: 12px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 15px;">🔄</div>
+                <h3 style="color: #e2e8f0; margin-bottom: 10px;">Validating Host...</h3>
+                <p style="color: #a0aec0;">Connecting via SSH and checking requirements</p>
+            </div>
+        `;
+        
+        // Make API call
+        fetch('/api/validate-host', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                vmType: vmType,
+                host: host,
+                username: username,
+                authMethod: authMethod,
+                password: password,
+                keyPath: keyPath,
+                sshPort: sshPort,
+                zone: zone,
+                minCPU: minCPU,
+                minMemory: minMemory,
+                minDisk: minDisk
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Display results
+            let resultHTML = '';
+            
+            if (data.error) {
+                // Error state
+                resultHTML = `
+                    <div style="padding: 30px; background: #1a1a1a; border-radius: 12px; border: 2px solid #e53e3e;">
+                        <div style="font-size: 48px; margin-bottom: 15px; text-align: center;">❌</div>
+                        <h3 style="color: #fc8181; margin-bottom: 15px; text-align: center;">Validation Failed</h3>
+                        <div style="padding: 15px; background: rgba(229, 62, 62, 0.1); border: 1px solid #e53e3e; border-radius: 8px; margin-bottom: 20px;">
+                            <p style="color: #fc8181; margin: 0;"><strong>Error:</strong> ${data.error}</p>
+                        </div>
+                    </div>
+                `;
+            } else if (data.success) {
+                // Success state
+                resultHTML = `
+                    <div style="padding: 30px; background: #1a1a1a; border-radius: 12px; border: 2px solid #48bb78;">
+                        <div style="font-size: 48px; margin-bottom: 15px; text-align: center;">✅</div>
+                        <h3 style="color: #68d391; margin-bottom: 10px; text-align: center;">Host Meets All Requirements!</h3>
+                        <p style="color: #a0aec0; text-align: center; margin-bottom: 25px;">This server can join your Kubernetes cluster</p>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+                            <div style="padding: 20px; background: rgba(72, 187, 120, 0.1); border: 1px solid #48bb78; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: #68d391; font-weight: bold; margin-bottom: 5px;">${data.cpu_cores}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">CPU Cores</div>
+                                <div style="color: #68d391; font-size: 12px; margin-top: 5px;">✓ Required: ${minCPU}</div>
+                            </div>
+                            <div style="padding: 20px; background: rgba(72, 187, 120, 0.1); border: 1px solid #48bb78; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: #68d391; font-weight: bold; margin-bottom: 5px;">${data.memory_mib}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">Memory (MiB)</div>
+                                <div style="color: #68d391; font-size: 12px; margin-top: 5px;">✓ Required: ${minMemory}</div>
+                            </div>
+                            <div style="padding: 20px; background: rgba(72, 187, 120, 0.1); border: 1px solid #48bb78; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: #68d391; font-weight: bold; margin-bottom: 5px;">${data.disk_gib_free}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">Free Disk (GiB)</div>
+                                <div style="color: #68d391; font-size: 12px; margin-top: 5px;">✓ Required: ${minDisk}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Partial failure state
+                resultHTML = `
+                    <div style="padding: 30px; background: #1a1a1a; border-radius: 12px; border: 2px solid #ed8936;">
+                        <div style="font-size: 48px; margin-bottom: 15px; text-align: center;">⚠️</div>
+                        <h3 style="color: #fbd38d; margin-bottom: 10px; text-align: center;">Host Does Not Meet Requirements</h3>
+                        <p style="color: #a0aec0; text-align: center; margin-bottom: 25px;">This server cannot join your Kubernetes cluster</p>
+                        
+                        <div style="padding: 20px; background: rgba(237, 137, 54, 0.1); border: 1px solid #ed8936; border-radius: 8px; margin-bottom: 25px;">
+                            <h4 style="color: #fbd38d; margin-top: 0; margin-bottom: 15px;">Failed Requirements:</h4>
+                            <ul style="margin: 0; padding-left: 20px; color: #fbd38d;">
+                                ${data.failures.map(f => `<li style="margin-bottom: 8px;">${f}</li>`).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                            <div style="padding: 20px; background: #2d3748; border: 1px solid #4a5568; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: ${data.cpu_cores >= minCPU ? '#68d391' : '#fc8181'}; font-weight: bold; margin-bottom: 5px;">${data.cpu_cores}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">CPU Cores</div>
+                                <div style="color: ${data.cpu_cores >= minCPU ? '#68d391' : '#fc8181'}; font-size: 12px; margin-top: 5px;">${data.cpu_cores >= minCPU ? '✓' : '✗'} Required: ${minCPU}</div>
+                            </div>
+                            <div style="padding: 20px; background: #2d3748; border: 1px solid #4a5568; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: ${data.memory_mib >= minMemory ? '#68d391' : '#fc8181'}; font-weight: bold; margin-bottom: 5px;">${data.memory_mib}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">Memory (MiB)</div>
+                                <div style="color: ${data.memory_mib >= minMemory ? '#68d391' : '#fc8181'}; font-size: 12px; margin-top: 5px;">${data.memory_mib >= minMemory ? '✓' : '✗'} Required: ${minMemory}</div>
+                            </div>
+                            <div style="padding: 20px; background: #2d3748; border: 1px solid #4a5568; border-radius: 10px; text-align: center;">
+                                <div style="font-size: 32px; color: ${data.disk_gib_free >= minDisk ? '#68d391' : '#fc8181'}; font-weight: bold; margin-bottom: 5px;">${data.disk_gib_free}</div>
+                                <div style="color: #a0aec0; font-size: 14px;">Free Disk (GiB)</div>
+                                <div style="color: ${data.disk_gib_free >= minDisk ? '#68d391' : '#fc8181'}; font-size: 12px; margin-top: 5px;">${data.disk_gib_free >= minDisk ? '✓' : '✗'} Required: ${minDisk}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            resultsSection.innerHTML = resultHTML;
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        })
+        .catch(error => {
+            resultsSection.innerHTML = `
+                <div style="padding: 30px; background: #1a1a1a; border-radius: 12px; border: 2px solid #e53e3e;">
+                    <div style="font-size: 48px; margin-bottom: 15px; text-align: center;">❌</div>
+                    <h3 style="color: #fc8181; margin-bottom: 15px; text-align: center;">Request Failed</h3>
+                    <div style="padding: 15px; background: rgba(229, 62, 62, 0.1); border: 1px solid #e53e3e; border-radius: 8px;">
+                        <p style="color: #fc8181; margin: 0;"><strong>Error:</strong> ${error.message}</p>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    </script>
     """
     return render_template_string(dashboard_template,
                                 title="Host Validator - Kubernetes AI Dashboard",
@@ -4245,6 +4625,219 @@ def docs_component_glossary():
                                 content=content,
                                 current_year=datetime.datetime.now().year,
                                 current_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+@app.route('/api/validate-host', methods=['POST'])
+@login_required
+def validate_host():
+    """API endpoint to validate host SSH connection and check K8s requirements"""
+    try:
+        data = request.json
+        
+        # Extract parameters
+        vm_type = data.get('vmType', 'standalone')
+        host = data.get('host', '')
+        username = data.get('username', 'root')
+        auth_method = data.get('authMethod', 'password')
+        password = data.get('password', '')
+        key_path = data.get('keyPath', '')
+        ssh_port = int(data.get('sshPort', 22))
+        zone = data.get('zone', '')
+        
+        min_cpu = int(data.get('minCPU', 1))
+        min_memory = int(data.get('minMemory', 1024))
+        min_disk = int(data.get('minDisk', 1))
+        
+        if not host or not username:
+            return jsonify({
+                'success': False,
+                'error': 'Host and username are required'
+            }), 400
+        
+        result = {
+            'success': False,
+            'cpu_cores': 0,
+            'memory_mib': 0,
+            'disk_gib_free': 0,
+            'failures': [],
+            'error': None,
+            'execution_log': []
+        }
+        
+        # SSH Connection
+        ssh_client = None
+        try:
+            ssh_client = paramiko.SSHClient()
+            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            
+            # Connect based on auth method
+            if auth_method == 'password':
+                if not password:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Password is required for password authentication'
+                    }), 400
+                ssh_client.connect(
+                    hostname=host,
+                    port=ssh_port,
+                    username=username,
+                    password=password,
+                    timeout=10
+                )
+            elif auth_method == 'key':
+                if not key_path:
+                    return jsonify({
+                        'success': False,
+                        'error': 'SSH key path is required for key authentication'
+                    }), 400
+                # Expand ~ to home directory
+                expanded_key_path = os.path.expanduser(key_path)
+                if not os.path.exists(expanded_key_path):
+                    return jsonify({
+                        'success': False,
+                        'error': f'SSH key not found at: {expanded_key_path}'
+                    }), 400
+                ssh_client.connect(
+                    hostname=host,
+                    port=ssh_port,
+                    username=username,
+                    key_filename=expanded_key_path,
+                    timeout=10
+                )
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Unsupported authentication method: {auth_method}'
+                }), 400
+            
+            # Check CPU cores
+            try:
+                stdin, stdout, stderr = ssh_client.exec_command('nproc', timeout=15)
+                cpu_output = stdout.read().decode().strip()
+                if cpu_output.isdigit():
+                    result['cpu_cores'] = int(cpu_output)
+                    result['execution_log'].append({
+                        'command': 'nproc',
+                        'output': cpu_output,
+                        'status': 'success'
+                    })
+                else:
+                    # Fallback
+                    stdin, stdout, stderr = ssh_client.exec_command('grep -c processor /proc/cpuinfo', timeout=15)
+                    cpu_output = stdout.read().decode().strip()
+                    if cpu_output.isdigit():
+                        result['cpu_cores'] = int(cpu_output)
+                        result['execution_log'].append({
+                            'command': 'grep -c processor /proc/cpuinfo',
+                            'output': cpu_output,
+                            'status': 'success'
+                        })
+            except Exception as e:
+                result['execution_log'].append({
+                    'command': 'CPU check',
+                    'output': '',
+                    'status': 'error',
+                    'error': str(e)
+                })
+            
+            if result['cpu_cores'] < min_cpu:
+                result['failures'].append(f"CPU cores: {result['cpu_cores']} < {min_cpu} required")
+            
+            # Check Memory (in MiB)
+            try:
+                stdin, stdout, stderr = ssh_client.exec_command("awk '/MemTotal/ {printf \"%.0f\", $2/1024}' /proc/meminfo", timeout=15)
+                mem_output = stdout.read().decode().strip()
+                if mem_output.isdigit():
+                    result['memory_mib'] = int(mem_output)
+                    result['execution_log'].append({
+                        'command': "awk '/MemTotal/ {printf \"%.0f\", $2/1024}' /proc/meminfo",
+                        'output': mem_output,
+                        'status': 'success'
+                    })
+            except Exception as e:
+                result['execution_log'].append({
+                    'command': 'Memory check',
+                    'output': '',
+                    'status': 'error',
+                    'error': str(e)
+                })
+            
+            if result['memory_mib'] < min_memory:
+                result['failures'].append(f"Memory: {result['memory_mib']} MiB < {min_memory} MiB required")
+            
+            # Check Disk Space (free space on /)
+            try:
+                stdin, stdout, stderr = ssh_client.exec_command("df -BG / | tail -1 | awk '{print $4}' | sed 's/G//'", timeout=15)
+                disk_output = stdout.read().decode().strip()
+                if disk_output.replace('.', '').isdigit():
+                    gb = float(disk_output)
+                    # Convert GB to GiB
+                    result['disk_gib_free'] = int(gb / 1.073741824)
+                    result['execution_log'].append({
+                        'command': "df -BG / | tail -1 | awk '{print $4}' | sed 's/G//'",
+                        'output': disk_output,
+                        'status': 'success'
+                    })
+            except Exception as e:
+                result['execution_log'].append({
+                    'command': 'Disk check',
+                    'output': '',
+                    'status': 'error',
+                    'error': str(e)
+                })
+            
+            if result['disk_gib_free'] < min_disk:
+                result['failures'].append(f"Disk space: {result['disk_gib_free']} GiB < {min_disk} GiB required")
+            
+            # Overall result
+            result['success'] = len(result['failures']) == 0
+            
+            ssh_client.close()
+            
+            return jsonify(result)
+            
+        except paramiko.AuthenticationException:
+            if ssh_client:
+                ssh_client.close()
+            return jsonify({
+                'success': False,
+                'error': 'SSH authentication failed. Check username/password or key.',
+                'cpu_cores': 0,
+                'memory_mib': 0,
+                'disk_gib_free': 0,
+                'failures': []
+            })
+        except paramiko.SSHException as e:
+            if ssh_client:
+                ssh_client.close()
+            return jsonify({
+                'success': False,
+                'error': f'SSH connection error: {str(e)}',
+                'cpu_cores': 0,
+                'memory_mib': 0,
+                'disk_gib_free': 0,
+                'failures': []
+            })
+        except Exception as e:
+            if ssh_client:
+                ssh_client.close()
+            return jsonify({
+                'success': False,
+                'error': f'Connection failed: {str(e)}',
+                'cpu_cores': 0,
+                'memory_mib': 0,
+                'disk_gib_free': 0,
+                'failures': []
+            })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Server error: {str(e)}',
+            'cpu_cores': 0,
+            'memory_mib': 0,
+            'disk_gib_free': 0,
+            'failures': []
+        }), 500
 
 @app.route('/api/vm-data')
 @login_required
