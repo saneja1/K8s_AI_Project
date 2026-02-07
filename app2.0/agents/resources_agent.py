@@ -98,6 +98,14 @@ YOUR RESPONSIBILITY:
 Monitor and report on resource allocation, capacity, limits, requests, and utilization.
 You handle HOW MUCH resources (CPU/memory/storage) are available, requested, and used.
 
+DISK/STORAGE QUESTIONS:
+- If the user asks about disk/storage usage (including "current disk usage"), you MUST answer using allocation/limits/requests/allocatable from kubectl tools.
+- Explicitly state that real-time pod disk usage is not available via metrics-server and you are reporting configured allocations/limits instead.
+- For disk/storage questions, call get_node_resources() FIRST and report any storage/ephemeral-storage capacity/allocatable from node describe output.
+- For disk/storage questions, ONLY report storage/ephemeral-storage capacity, allocatable, and allocated requests/limits. Do NOT mention CPU or memory.
+- If ephemeral-storage requests/limits are not present, explicitly say "No ephemeral-storage requests/limits configured".
+- Preserve storage units exactly as shown in output (Ki/Mi/Gi). Do NOT drop units.
+
 CLUSTER CONTEXT - NODE NAMES:
 This cluster has 2 nodes with the following ACTUAL names in Kubernetes:
 1. Master node: k8s-master-01.us-west1-a.c.project-f972fc71-9c5d-48d5-99f.internal (short name: k8s-master-01)
@@ -311,21 +319,78 @@ CRITICAL RULES:
 3. get_pod_memory_comparison() works WITHOUT metrics-server - always try it first
 4. Health queries → Health Agent
 5. Listing/counting → Describe Agent
-6. Present numbers clearly (cores, Mi/Gi)"""
+6. If question mentions disk/storage usage → call get_node_resources() and answer with storage/ephemeral-storage capacity, allocatable, and requests/limits; clearly say real-time pod disk usage is not available in this setup
+7. Present numbers clearly (cores, Mi/Gi)"""
     
     # Create agent node
     def resources_agent_node(state):
         """Resources agent with system message"""
-        from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+        from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
         
         messages = state["messages"]
+
+        def _is_disk_question(text: str) -> bool:
+            if not text:
+                return False
+            lowered = text.lower()
+            disk_keywords = ["disk", "storage", "ephemeral", "volume", "pvc", "filesystem"]
+            return any(k in lowered for k in disk_keywords)
+
+        def _filter_storage_lines(text: str) -> str:
+            if not text:
+                return text
+            keep_keywords = [
+                "name:",
+                "capacity:",
+                "allocatable:",
+                "allocated resources:",
+                "resource",
+                "requests",
+                "limits",
+                "ephemeral-storage",
+            ]
+            lines = text.splitlines()
+            kept = [line for line in lines if any(k in line.lower() for k in keep_keywords)]
+            # If nothing matched, fall back to original text
+            return "\n".join(kept) if kept else text
+
+        # Extract most recent user question text
+        user_question = ""
+        for m in reversed(messages):
+            if isinstance(m, HumanMessage):
+                user_question = m.content if isinstance(m.content, str) else str(m.content)
+                break
         
         # Check if we have tool results and need final answer
         has_tool_results = any(isinstance(m, ToolMessage) for m in messages)
         last_message = messages[-1]
         has_pending_tool_calls = hasattr(last_message, 'tool_calls') and last_message.tool_calls
+
+        # Force tool call for disk/storage questions to ensure node storage context
+        if _is_disk_question(user_question) and not has_tool_results and not has_pending_tool_calls:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="Calling get_node_resources for disk/storage context.",
+                        tool_calls=[{"name": "get_node_resources", "args": {}, "id": "disk_node_resources"}]
+                    )
+                ]
+            }
         
         if has_tool_results and not has_pending_tool_calls:
+            if _is_disk_question(user_question):
+                filtered_messages = []
+                for m in messages:
+                    if isinstance(m, ToolMessage):
+                        filtered_messages.append(
+                            ToolMessage(
+                                content=_filter_storage_lines(str(m.content)),
+                                tool_call_id=m.tool_call_id
+                            )
+                        )
+                    else:
+                        filtered_messages.append(m)
+                messages = filtered_messages
             # Force final summary - no raw JSON
             messages_with_system = [SystemMessage(content=system_msg)] + messages + [
                 HumanMessage(content="""Now provide a clear, concise summary of the resource information. 
@@ -333,6 +398,9 @@ CRITICAL RULES:
 CRITICAL INSTRUCTIONS:
 - NO raw JSON - only human-readable text with specific numbers
 - If the tool output contains '⚠️ METRICS-SERVER NOT AVAILABLE', you MUST explicitly state this is ALLOCATED/RESERVED resources, NOT actual real-time usage
+- If the user asked about disk/storage usage, explicitly state real-time pod disk usage isn't available and you are reporting configured allocation/limits/allocatable values instead
+- If the user asked about disk/storage usage, only include storage/ephemeral-storage details (capacity, allocatable, requests/limits). Exclude CPU/memory details
+- Preserve storage units (Ki/Mi/Gi) exactly as shown in tool output
 - Use words like "allocated", "reserved", "requested" - NEVER say "using", "consuming", or "current usage"
 - Example: "Master node has 950m CPU ALLOCATED (47% of requests)" NOT "Master node is using 950m CPU"
 - DO NOT mention pod counts or say "X pods running" - focus ONLY on CPU/memory/storage numbers

@@ -154,9 +154,9 @@ Query: "{user_question}"
 
 Categories:
 1. HEALTH - Node health status, node readiness, cluster-level events, control plane component health, cluster health check (NOT individual pod health/status, NOT metrics/usage)
-2. RESOURCES - Resource allocation/limits/requests ONLY (NOT actual usage). Use ONLY when query explicitly mentions "allocation", "limits", "requests", "capacity", or "quotas"
+2. RESOURCES - Resource allocation/limits/requests/capacity/allocatable ONLY (NOT actual usage). **ALL disk/storage questions go here** (even if user says "current usage")
 3. DESCRIBE - List/count/describe K8s resources (pods, services, deployments, namespaces), pod status (Running/Failed/Pending), unhealthy pods, POD LOGS (get/show/retrieve logs)
-4. MONITOR - ALL CPU/MEMORY/DISK usage queries, metrics, percentages, actual resource consumption (default for any "usage" questions)
+4. MONITOR - CPU/MEMORY usage queries, metrics, percentages, actual resource consumption (default for CPU/memory "usage" questions)
 5. SECURITY - RBAC, roles, permissions, network policies, secrets
 6. OPERATIONS - Scaling deployments, updates, rollouts, restarts, maintenance, creating/deleting resources, applying YAML configs
 
@@ -174,12 +174,13 @@ RESOURCES CATEGORY (allocation/limits/requests ONLY - NOT usage):
 - **ONLY use if query explicitly mentions: "allocation", "limits", "requests", "capacity", "quotas", "allocatable"**
 - **"resource allocation" or "resource limits" or "resource requests"** → RESOURCES
 - **"allocatable resources" or "capacity" or "resource quotas"** → RESOURCES
-- **NEVER use RESOURCES for "usage", "metrics", "CPU", "memory", "disk"** → those go to MONITOR
-- NOTE: For actual CPU/memory/disk usage metrics, ALWAYS use MONITOR instead
+- **ANY disk/storage question ("disk", "storage", "ephemeral", "volume", "PVC", "filesystem") → RESOURCES (ALWAYS)**
+- **NEVER use RESOURCES for CPU/memory usage/metrics** → those go to MONITOR
+- NOTE: For CPU/memory usage metrics, ALWAYS use MONITOR instead
 
-MONITOR CATEGORY (ALL usage/metrics queries - default for resource consumption):
-- **DEFAULT: ANY mention of "usage", "CPU", "memory", "disk", "metrics", "consumption"** → MONITOR (ONLY)
-- **"cpu usage" or "memory usage" or "disk usage"** → MONITOR (ONLY)
+MONITOR CATEGORY (CPU/memory usage/metrics queries - default for resource consumption):
+- **DEFAULT: ANY mention of "usage", "CPU", "memory", "metrics", "consumption"** → MONITOR (ONLY)
+- **"cpu usage" or "memory usage"** → MONITOR (ONLY)
 - **"what is cpu" or "what is memory" or "get cpu" or "get memory"** → MONITOR (ONLY)
 - **"node cpu" or "node memory" or "pod cpu" or "pod memory"** → MONITOR (ONLY)
 - **"CPU for node X" or "memory for node X" or "metrics for node X"** → MONITOR (ONLY)
@@ -187,7 +188,7 @@ MONITOR CATEGORY (ALL usage/metrics queries - default for resource consumption):
 - **"CPU and memory" or "CPU/memory metrics"** → MONITOR (ONLY)
 - **"show metrics" or "get metrics" or "node metrics" or "performance metrics"** → MONITOR (ONLY)
 - **"worker node metrics" or "master node metrics" or "metrics for worker/master"** → MONITOR (ONLY)
-- **"CPU, memory, disk" or "all metrics" or "comprehensive metrics"** → MONITOR (ONLY)
+- **"CPU, memory" or "all metrics" or "comprehensive metrics"** → MONITOR (ONLY)
 - **"CPU trend" or "memory trend" or "show CPU last hour"** → MONITOR (ONLY)
 - **"CPU usage over time" or "historical metrics"** → MONITOR (ONLY)
 - **"highest memory" or "most memory" or "which pod uses most memory"** → MONITOR (ONLY)
@@ -197,7 +198,7 @@ MONITOR CATEGORY (ALL usage/metrics queries - default for resource consumption):
 - **"monitor nodes" or "node monitoring" or "cluster monitoring"** → MONITOR (ONLY)
 - **"percentage" or "%" (any percentage-based metrics)** → MONITOR (ONLY)
 - **ANY query with "usage" in it** → MONITOR (ONLY)
-- Any query asking for CPU/memory/disk/network consumption/metrics → MONITOR
+- Any query asking for CPU/memory/network consumption/metrics → MONITOR
 - Any query asking for trends/history/time-series → MONITOR
 - Any query asking for actual resource values → MONITOR
 

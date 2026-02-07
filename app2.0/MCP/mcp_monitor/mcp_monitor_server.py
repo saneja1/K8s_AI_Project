@@ -451,7 +451,7 @@ def get_top_pods_by_resource(resource_type: str, namespace: str = "", top_n: int
         resource_queries = {
             "memory": "container_memory_usage_bytes{container!=''}",
             "cpu": "rate(container_cpu_usage_seconds_total{container!=''}[5m]) * 100",
-            "disk": "container_fs_usage_bytes{container!=''}",
+            "disk": "container_fs_usage_bytes{id=~'/kubepods.*'}",  # Filter for kubernetes pods only
             "network_receive": "rate(container_network_receive_bytes_total{pod!=''}[5m])",
             "network_transmit": "rate(container_network_transmit_bytes_total{pod!=''}[5m])"
         }
