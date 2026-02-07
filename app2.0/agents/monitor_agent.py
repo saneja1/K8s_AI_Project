@@ -74,6 +74,27 @@ YOUR RESPONSIBILITY:
 Query Prometheus for real-time metrics, historical trends, and resource monitoring data.
 You handle CURRENT and HISTORICAL metric data from Prometheus (CPU usage trends, memory spikes, etc.)
 
+⚠️ **CRITICAL INSTRUCTION - READ THIS FIRST**:
+AFTER you receive tool results, you MUST:
+1. Analyze the data from the tool
+2. Answer the user's original question DIRECTLY in 1-2 clear sentences
+3. ONLY provide raw metrics if the user asks to "show" or "display" them
+
+**DO NOT** just return raw tool output. You MUST synthesize an answer.
+
+EXAMPLES OF GOOD RESPONSES:
+Q: "Which node has higher CPU?"
+Tool returns: [metrics for both nodes]
+YOUR RESPONSE: "k8s-worker has higher CPU usage at 22.10%, while k8s-master is at 12.07%."
+
+Q: "Is memory high?"
+Tool returns: [memory metrics]
+YOUR RESPONSE: "No, memory usage is normal across both nodes - k8s-master at 23.55% and k8s-worker at 20.50%."
+
+Q: "Show me all node metrics"
+Tool returns: [detailed metrics]
+YOUR RESPONSE: [present the detailed metrics cleanly formatted]
+
 CLUSTER CONTEXT:
 This cluster has 2 nodes:
 1. Master node - job name in Prometheus: "k8s-master" (instance: 10.128.0.6:9100)
@@ -195,6 +216,11 @@ CRITICAL PARAMETER RULES:
 - For TRENDS/HISTORY (words like "trend", "last hour", "over time"): Use query_prometheus_range()
 
 RESPONSE RULES:
+- **CRITICAL: ALWAYS ANSWER THE QUESTION IN THE FIRST SENTENCE**
+- **For comparison questions ("which is higher/lower/more"), DIRECTLY STATE THE ANSWER BEFORE any metrics**
+  * Example: "k8s-worker has higher CPU usage at 22.10%, compared to k8s-master at 12.07%."
+- **For yes/no questions, answer YES or NO first, then explain**
+- **For "show me" questions, provide a summary sentence before detailed metrics**
 - Always query Prometheus, never guess values
 - Format numbers clearly (%, MB, GB, bytes/sec)
 - Explain trends: "CPU increased from X% to Y%"
@@ -203,6 +229,20 @@ RESPONSE RULES:
 - If asked about RESOURCE CAPACITY (how much total) → say "Resources Agent handles that"
 - If asked about POD STATUS/HEALTH → say "Health Agent handles that"
 - If asked about WHAT EXISTS (listing pods) → say "Describe Agent handles that"
+
+**MANDATORY FORMAT:**
+1. Direct answer to the question (1-2 sentences)
+2. Supporting details/metrics (optional)
+
+EXAMPLES:
+Q: "Which node has higher CPU?"
+A: "k8s-worker has higher CPU usage at 21.99%, compared to k8s-master at 12.12%."
+
+Q: "Is memory high on master?"
+A: "No, k8s-master memory usage is 23.55%, which is within normal range."
+
+Q: "Show me disk usage"
+A: "Disk usage across nodes: k8s-master is at 28.21% and k8s-worker is at 37.34%."
 
 CRITICAL: DEFAULT TO get_node_metrics() FOR SIMPLE QUERIES
 - Unless the user explicitly asks for "trend", "over time", "last hour", "history", "past X hours"
@@ -397,10 +437,13 @@ def ask_monitor_agent(question: str, api_key: str = None, verbose: bool = False)
             "messages": [HumanMessage(content=question)]
         })
         
-        # Extract the final answer
+        # Extract the final answer (only from AIMessage, not ToolMessage)
+        from langchain_core.messages import AIMessage
+        
         answer = "No response generated"
         for msg in reversed(result["messages"]):
-            if hasattr(msg, 'content'):
+            # Only extract from AI responses, not tool outputs
+            if isinstance(msg, AIMessage) and hasattr(msg, 'content'):
                 if isinstance(msg.content, str) and msg.content.strip():
                     answer = msg.content
                     break

@@ -7,6 +7,10 @@ import os
 import requests
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Get port from environment or default to 8004
 port = int(os.getenv('PORT', '8004'))
