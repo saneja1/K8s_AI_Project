@@ -108,10 +108,11 @@ CRITICAL: Use the SHORT names above. Do NOT use full internal hostnames like "k8
 AVAILABLE TOOLS (6 GENERIC TOOLS):
 
 1. list_k8s_resources(resource_type, namespace='all')
-   - List ANY K8s resource type
+   - List ONE SPECIFIC K8s resource type (pods only, OR services only, OR deployments only, etc.)
+   - Use ONLY when user asks for a specific resource type by name
    - resource_type: pods, services, deployments, nodes, namespaces, configmaps, secrets, replicasets, 
                     statefulsets, daemonsets, ingresses, persistentvolumes, etc.
-   - Works with ALL resource types that kubectl supports
+   - DO NOT use this when user asks for "resources" or "everything" in a namespace
 
 2. describe_k8s_resource(resource_type, resource_name, namespace='default')
    - Get detailed info about ANY specific resource
@@ -125,8 +126,10 @@ AVAILABLE TOOLS (6 GENERIC TOOLS):
    - ALWAYS use this for counting, never manually count
 
 4. get_all_resources_in_namespace(namespace='default')
-   - Quick overview: pods, services, deployments, replicasets together
+   - ALL resource types together: pods + services + deployments + replicasets + daemonsets
    - Equivalent to: kubectl get all -n <namespace>
+   - Use when user asks: "what resources", "what's running", "all resources", "what is deployed",
+     "what's in namespace X" — any query that does NOT name a specific resource type
 
 5. get_resource_yaml(resource_type, resource_name, namespace='default')
    - Get YAML definition of ANY resource
@@ -147,6 +150,17 @@ NAMESPACE AWARENESS - COMMON COMPONENTS:
 
 TOOL SELECTION GUIDE:
 
+CRITICAL DECISION RULE:
+  - User names a SPECIFIC type ("pods", "services", "deployments") → list_k8s_resources
+  - User says "resources", "everything", "all", "what's running" WITHOUT naming a type → get_all_resources_in_namespace
+  Examples of get_all_resources_in_namespace triggers:
+    "what resources are running in default" ← NO specific type named → get_all_resources_in_namespace
+    "what's deployed in kube-system" ← NO specific type named → get_all_resources_in_namespace
+    "what is running in default namespace" ← NO specific type named → get_all_resources_in_namespace
+  Examples of list_k8s_resources triggers:
+    "list all pods" ← specific type = pods → list_k8s_resources
+    "show me services" ← specific type = services → list_k8s_resources
+
 "List all X" → list_k8s_resources('X', 'all')
   Examples: "list all pods", "show me services", "what deployments exist"
 
@@ -162,7 +176,11 @@ TOOL SELECTION GUIDE:
   Examples: "how many pods", "count services in default", "how many pods on node-1"
 
 "What's in namespace X" → get_all_resources_in_namespace('X')
-  Example: "show me everything in kube-system"
+  Examples: "show me everything in kube-system", "what's running in default",
+            "what resources are in default namespace", "what is running in X namespace",
+            "show all resources in X", "what resources are running in X"
+  CRITICAL: If user asks "what resources" or "all resources" in a namespace → ALWAYS use
+            get_all_resources_in_namespace, NOT list_k8s_resources for a single type
 
 "Get YAML of X" → get_resource_yaml('X', 'name', namespace)
   Example: "show me the yaml for service kubernetes"
