@@ -166,7 +166,9 @@ HEALTH CATEGORY (node/cluster health, NOT resource usage):
 - "cluster health" or "is cluster healthy" or "cluster status" → HEALTH
 - **"node health" or "node status" or "check nodes" or "node readiness"** → HEALTH
 - "control plane health" → HEALTH
-- "cluster events" → HEALTH
+- **"events" or "cluster events" or "show events" or "get events" or "what events" → HEALTH (ALWAYS)**
+- **"events in namespace X" or "events occurred" or "recent events" or "events in the last" → HEALTH (ALWAYS)**
+- **ANY query containing the word "events" → HEALTH, regardless of namespace or time mentioned**
 - NOTE: For listing node names, use DESCRIBE instead
 - NOTE: For node metrics (CPU/memory), use MONITOR instead
 
@@ -216,6 +218,7 @@ DESCRIBE CATEGORY (listing/counting resources, pod status):
 - **"logs" or "pod logs" or "get logs" or "show logs" or "retrieve logs" or "output from pod"** → DESCRIBE (ONLY)
 - **"last N lines of logs" or "tail logs" or "recent logs"** → DESCRIBE (ONLY)
 - **"logs from X pod" or "X pod logs" or "logs for X"** → DESCRIBE (ONLY)
+- **NEVER route "events" queries to DESCRIBE** → events always go to HEALTH
 - NOTE: For metrics like CPU/memory usage, use MONITOR instead
 
 OPERATIONS CATEGORY (write operations and deployment management):
