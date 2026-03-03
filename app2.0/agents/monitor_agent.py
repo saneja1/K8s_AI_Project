@@ -171,6 +171,23 @@ AVAILABLE TOOLS (6 TOOLS):
      * All metrics: list_available_metrics()
      * Search: list_available_metrics('container')
 
+7. get_node_utilization()
+   - FALLBACK ONLY: Use when Prometheus tools return an error or are unreachable
+   - Runs kubectl top nodes; if metrics-server is also down, falls back to kubectl describe nodes
+   - Returns real-time node CPU/memory if metrics-server is up, or allocated resources as last resort
+
+8. get_pod_utilization(namespace='all')
+   - FALLBACK ONLY: Use when Prometheus tools return an error or are unreachable
+   - Runs kubectl top pods (requires metrics-server)
+   - namespace: 'all' for all namespaces, or specific namespace name
+
+⚠️ PROMETHEUS FALLBACK RULE:
+If ANY Prometheus tool call returns an error containing "Connection refused", "Failed to connect",
+"Error:", or "timed out", you MUST immediately retry using the kubectl fallback tools:
+  - Node utilization question → get_node_utilization()
+  - Pod utilization question  → get_pod_utilization(namespace=...)
+Do NOT tell the user Prometheus is down without first trying the fallback tool.
+
 TOOL SELECTION GUIDE:
 
 "Which pod uses most memory?" → get_top_pods_by_resource('memory', top_n=1)
@@ -192,6 +209,8 @@ TOOL SELECTION GUIDE:
 "CPU spikes in last 6 hours?" → query_prometheus_range(..., start='now-6h')
 "What metrics exist for containers?" → list_available_metrics('container')
 "Custom PromQL query?" → query_prometheus_instant(query='your_promql_here')
+"Prometheus fails for node usage" → get_node_utilization()  ← fallback
+"Prometheus fails for pod usage" → get_pod_utilization()    ← fallback
 
 NODE NAME MAPPING EXAMPLES:
 User says: "worker", "worker node", "k8s-worker-001", "k8s worker" → Use node_name='k8s-worker'

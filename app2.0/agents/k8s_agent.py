@@ -177,11 +177,15 @@ RESOURCES CATEGORY (allocation/limits/requests ONLY - NOT usage):
 - **"resource allocation" or "resource limits" or "resource requests"** → RESOURCES
 - **"allocatable resources" or "capacity" or "resource quotas"** → RESOURCES
 - **ANY disk/storage question ("disk", "storage", "ephemeral", "volume", "PVC", "filesystem") → RESOURCES (ALWAYS)**
-- **NEVER use RESOURCES for CPU/memory usage/metrics** → those go to MONITOR
+- **"which pod has the highest/most memory" or "pod with highest memory" or "pod with most memory"** → RESOURCES (uses configured requests, not live metrics)
+- **"which pod has the highest/most CPU" or "pod with highest CPU" or "pod with most CPU"** → RESOURCES (uses configured requests)
+- **"find pod with highest/most resource" or "largest memory pod"** → RESOURCES- **\"which pod is consuming the most CPU\" or \"which pod is consuming the most memory\"** → RESOURCES (based on requests)
+- **\"which pod uses most CPU\" or \"which pod uses most memory\"** → RESOURCES (based on requests)- **NEVER use RESOURCES for CPU/memory usage/metrics** → those go to MONITOR
 - NOTE: For CPU/memory usage metrics, ALWAYS use MONITOR instead
 
 MONITOR CATEGORY (CPU/memory usage/metrics queries - default for resource consumption):
-- **DEFAULT: ANY mention of "usage", "CPU", "memory", "metrics", "consumption"** → MONITOR (ONLY)
+- **DEFAULT: ANY mention of "usage", "metrics", "consumption"** → MONITOR (ONLY) — EXCEPTION: "highest/most/consuming the most CPU/memory" for pods → RESOURCES
+- **EXCEPTION: "which pod is consuming the most" or "which pod uses most"** → RESOURCES (not Monitor)
 - **"cpu usage" or "memory usage"** → MONITOR (ONLY)
 - **"what is cpu" or "what is memory" or "get cpu" or "get memory"** → MONITOR (ONLY)
 - **"node cpu" or "node memory" or "pod cpu" or "pod memory"** → MONITOR (ONLY)
@@ -193,9 +197,6 @@ MONITOR CATEGORY (CPU/memory usage/metrics queries - default for resource consum
 - **"CPU, memory" or "all metrics" or "comprehensive metrics"** → MONITOR (ONLY)
 - **"CPU trend" or "memory trend" or "show CPU last hour"** → MONITOR (ONLY)
 - **"CPU usage over time" or "historical metrics"** → MONITOR (ONLY)
-- **"highest memory" or "most memory" or "which pod uses most memory"** → MONITOR (ONLY)
-- **"which pod uses most CPU" or "largest CPU/memory"** → MONITOR (ONLY)
-- **"find pod with highest/most resource"** → MONITOR (ONLY)
 - **"network traffic" or "network metrics"** → MONITOR (ONLY)
 - **"monitor nodes" or "node monitoring" or "cluster monitoring"** → MONITOR (ONLY)
 - **"percentage" or "%" (any percentage-based metrics)** → MONITOR (ONLY)
@@ -248,11 +249,11 @@ MULTI-AGENT EXAMPLES:
 - **"get node metrics"** → MONITOR (ONLY)
 - **"show metrics for node X"** → MONITOR (ONLY)
 - **"performance metrics"** → MONITOR (ONLY)
-- **"count pods AND highest memory AND cluster health"** → DESCRIBE,MONITOR,HEALTH (all 3)
+- **"count pods AND highest memory AND cluster health"** → DESCRIBE,RESOURCES,HEALTH (all 3)
 - **"CPU trend last hour"** → MONITOR (ONLY)
-- **"which pod uses most memory"** → MONITOR (ONLY)
+- **"which pod uses most memory"** → RESOURCES (ONLY)
 - **"scale deployment AND check node health"** → OPERATIONS,HEALTH (parallel)
-- **"list deployments AND which pod uses most memory"** → DESCRIBE,MONITOR (parallel)
+- **"list deployments AND which pod uses most memory"** → DESCRIBE,RESOURCES (parallel)
 
 CRITICAL: Respond with ONLY comma-separated category names, nothing else.
 Examples:

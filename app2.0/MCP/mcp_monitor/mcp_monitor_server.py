@@ -4,6 +4,7 @@ Exposes Prometheus monitoring tools via MCP protocol
 """
 
 import os
+import subprocess
 import requests
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
@@ -595,6 +596,80 @@ def list_available_metrics(search: str = "") -> str:
         
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+@mcp.tool()
+def get_node_utilization() -> str:
+    """
+    FALLBACK TOOL: Get current resource usage on nodes via kubectl top nodes.
+    Use this ONLY when Prometheus is unavailable or returns an error.
+    Falls back to kubectl describe nodes (allocated requests) if metrics-server is also unavailable.
+
+    Returns:
+        String with node utilization metrics or allocated resources
+    """
+    try:
+        top_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top nodes"
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
+            f"--command={top_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+
+        if result.returncode == 0 and "error" not in result.stderr.lower():
+            return "[kubectl top nodes]\n" + result.stdout
+
+        # Fallback to describe nodes if metrics-server is also down
+        describe_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
+            f"--command={describe_command}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+
+        if result.returncode == 0:
+            return (
+                "NOTE: metrics-server unavailable. Showing ALLOCATED resources (pod requests), "
+                "not real-time usage.\n\n" + result.stdout
+            )
+        return f"Error: {result.stderr}"
+    except Exception as e:
+        return f"Error executing command: {str(e)}"
+
+
+@mcp.tool()
+def get_pod_utilization(namespace: str = "all") -> str:
+    """
+    FALLBACK TOOL: Get current resource usage by pods via kubectl top pods.
+    Use this ONLY when Prometheus is unavailable or returns an error.
+    Requires metrics-server to be running in the cluster.
+
+    Args:
+        namespace: Namespace to check (default: "all" for all namespaces)
+
+    Returns:
+        String with pod utilization metrics
+    """
+    try:
+        if namespace == "all":
+            cmd = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -A"
+        else:
+            cmd = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
+
+        result = subprocess.run([
+            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "--zone=us-west1-a",
+            f"--command={cmd}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+
+        if result.returncode == 0:
+            return "[kubectl top pods]\n" + result.stdout
+        return f"Error: {result.stderr}"
+    except Exception as e:
+        return f"Error executing command: {str(e)}"
 
 
 if __name__ == "__main__":
