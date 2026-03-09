@@ -1,6 +1,9 @@
 Flask
 python-dotenv
 anthropic
+mcp[cli]
+graphviz
+paramiko
 
 # Authentication & Database (STEP 1)
 Flask-Login>=0.6.3
