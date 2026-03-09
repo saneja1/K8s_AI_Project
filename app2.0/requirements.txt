@@ -4,6 +4,7 @@ anthropic
 mcp[cli]
 graphviz
 paramiko
+langchain-mcp-adapters
 
 # Authentication & Database (STEP 1)
 Flask-Login>=0.6.3
