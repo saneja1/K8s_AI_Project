@@ -51,7 +51,7 @@ def get_node_resources() -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -90,7 +90,7 @@ def get_pod_resources(namespace: str = "all") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o json"
 
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -174,7 +174,7 @@ def get_namespace_resources() -> str:
         try:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A -o json"
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -267,7 +267,7 @@ def get_node_limits(node_name: str = "all") -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -358,7 +358,7 @@ def get_pod_specific_resource(field: str, namespace: str = "default") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -o json"
 
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"

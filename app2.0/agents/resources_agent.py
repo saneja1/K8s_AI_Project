@@ -282,7 +282,7 @@ DISK/STORAGE QUESTIONS:
 
 CLUSTER CONTEXT - NODE NAMES:
 This cluster has 2 nodes with the following ACTUAL names in Kubernetes:
-1. Master node: k8s-master-01.us-west1-a.c.project-f972fc71-9c5d-48d5-99f.internal (short name: k8s-master-01)
+1. Master node: k8s-master-01.us-west1-a.c.beaming-age-463822-k7.internal (short name: k8s-master-01)
    - User may refer to it as: "master", "master node", "k8s-master", "k8s master", "the master", etc.
    - ALWAYS use "k8s-master-01" when referencing this node
 

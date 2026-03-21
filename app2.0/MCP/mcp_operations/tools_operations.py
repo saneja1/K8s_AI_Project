@@ -27,7 +27,7 @@ def scale_deployment(name: str, namespace: str, replicas: int, dry_run: bool = F
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl scale deployment {name} -n {namespace} --replicas={replicas} {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -60,7 +60,7 @@ def restart_deployment(name: str, namespace: str, dry_run: bool = False) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout restart deployment/{name} -n {namespace} {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -95,7 +95,7 @@ def rollback_deployment(name: str, namespace: str, revision: int = None, dry_run
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout undo deployment/{name} -n {namespace} {revision_flag} {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -127,7 +127,7 @@ def get_deployment_rollout_status(name: str, namespace: str) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl rollout status deployment/{name} -n {namespace}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -160,7 +160,7 @@ def delete_pod(name: str, namespace: str, grace_period: int = 30, force: bool = 
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete pod {name} -n {namespace} {force_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -197,7 +197,7 @@ def delete_pods_by_status(status: str, namespace: str = "all", force: bool = Fal
             list_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} --field-selector=status.phase={status} -o json"
         
         list_result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={list_command}",
             "--quiet"
@@ -229,7 +229,7 @@ def delete_pods_by_status(status: str, namespace: str = "all", force: bool = Fal
             delete_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete pod {pod_name} -n {pod_ns} {force_flag}"
             
             delete_result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={delete_command}",
                 "--quiet"
@@ -279,7 +279,7 @@ def delete_pods_by_label(label_selector: str, namespace: str = "all", force: boo
             count_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n {namespace} -l {label_selector} -o json"
         
         count_result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={count_command}",
             "--quiet"
@@ -306,7 +306,7 @@ def delete_pods_by_label(label_selector: str, namespace: str = "all", force: boo
             delete_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete pods -n {namespace} -l {label_selector} {force_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={delete_command}",
             "--quiet"
@@ -344,7 +344,7 @@ def delete_deployment(name: str, namespace: str = "default", force: bool = False
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete deployment {name} -n {namespace} {force_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -375,7 +375,7 @@ def cordon_node(node_name: str) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl cordon {node_name}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -404,7 +404,7 @@ def uncordon_node(node_name: str) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl uncordon {node_name}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -446,7 +446,7 @@ def drain_node(node_name: str, force: bool = False, ignore_daemonsets: bool = Tr
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl drain {node_name} {flags_str} --grace-period=30"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -482,7 +482,7 @@ def patch_resource(resource_type: str, name: str, namespace: str, patch_json: st
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch {resource_type} {name} -n {namespace} -p \"{patch_escaped}\" --type=merge {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -514,7 +514,7 @@ def create_namespace(name: str, dry_run: bool = False) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace {name} {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -552,7 +552,7 @@ def delete_namespace(name: str, force: bool = False) -> str:
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl delete namespace {name} {force_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -603,7 +603,7 @@ def apply_yaml_config(yaml_content: str, namespace: str = "default", dry_run: bo
         full_command = f"echo '{yaml_escaped}' | sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f - -n {namespace} {dry_run_flag}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"

@@ -20,7 +20,7 @@ port = int(os.getenv('PORT', '8004'))
 mcp = FastMCP("K8s-Monitor", port=port)
 
 # Prometheus configuration
-PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://35.230.27.231:9090')
+PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://34.53.50.194:9090')
 PROMETHEUS_TIMEOUT = 10
 
 
@@ -611,7 +611,7 @@ def get_node_utilization() -> str:
     try:
         top_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top nodes"
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={top_command}",
             "--quiet"
@@ -623,7 +623,7 @@ def get_node_utilization() -> str:
         # Fallback to describe nodes if metrics-server is also down
         describe_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl describe nodes"
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={describe_command}",
             "--quiet"
@@ -659,7 +659,7 @@ def get_pod_utilization(namespace: str = "all") -> str:
             cmd = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl top pods -n {namespace}"
 
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={cmd}",
             "--quiet"

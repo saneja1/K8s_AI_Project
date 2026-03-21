@@ -206,7 +206,7 @@ def get_pods_info():
         full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods --all-namespaces -o json"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a", 
             f"--command={full_command}",
             "--quiet"
@@ -256,7 +256,7 @@ def execute_kubectl_command(command, timeout=10):
         full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl {command}"
         
         result = subprocess.run([
-            "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+            "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
             "--zone=us-west1-a",
             f"--command={full_command}",
             "--quiet"
@@ -3053,7 +3053,7 @@ def docs_full_architecture():
     with dot.subgraph(name='cluster_sources') as c:
         c.attr(label='💾 DATA SOURCES', style='filled,rounded', color='#E1BEE7', fontsize='11', fontname='Arial Bold', labeljust='l')
         c.node('K8s', '''☸️ Kubernetes Cluster\nMaster: k8s-master-01 (10.138.0.2)\nWorker: k8s-worker-01 (10.138.0.3)\nAccess: SSH + kubectl commands''', fillcolor='#CE93D8', shape='cylinder', width='2.8', height='1.1')
-        c.node('Prometheus', '''📊 Prometheus Server\nVM: prometheus-monitoring-01\nURL: http://35.233.152.108:9090\nData: node_exporter, cAdvisor,\nkube-state-metrics''', fillcolor='#CE93D8', shape='cylinder', width='2.8', height='1.1')
+        c.node('Prometheus', '''📊 Prometheus Server\nVM: prometheus-monitoring-01\nURL: http://34.53.50.194:9090\nData: node_exporter, cAdvisor,\nkube-state-metrics''', fillcolor='#CE93D8', shape='cylinder', width='2.8', height='1.1')
     
     # User to Supervisor edges
     dot.edge('CLI', 'Supervisor', label=' Query String ', color='#2196F3', penwidth='1.5', fontcolor='#2196F3')
@@ -3200,7 +3200,7 @@ def docs_full_architecture():
                                             <strong>📊 Prometheus Server:</strong>
                                             <ul style="margin: 5px 0 0 20px;">
                                                 <li>VM: prometheus-monitoring-01</li>
-                                                <li>URL: http://35.233.152.108:9090</li>
+                                                <li>URL: http://34.53.50.194:9090</li>
                                                 <li>Exporters: node_exporter, cAdvisor, kube-state-metrics</li>
                                             </ul>
                                         </div>
@@ -3250,11 +3250,11 @@ Content-Type: application/json
                                 <div style="background: #f8f9fa; color: #333; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #dee2e6;">
                                     <h5 style="color: #1a73e8; margin-bottom: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 8px;">2️⃣ MCP Server → K8s/Prometheus</h5>
                                     <pre style="background: #ffffff; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 0; border: 1px solid #dee2e6;"><code style="color: #212529;"># For Kubernetes tools:
-SSH pggo890@k8s-master-01
+SSH swinvm15@k8s-master-01
 → kubectl get pods -n kube-system -o json
 
 # For Prometheus tools:
-GET http://35.233.152.108:9090/api/v1/query
+GET http://34.53.50.194:9090/api/v1/query
 → ?query=up</code></pre>
                                 </div>
                             </div>
@@ -3538,7 +3538,7 @@ def check_pod_health(namespace: str = "default", pod_name: str = "") -> str:
     
     # 2. Execute via gcloud SSH to K8s master
     ssh_cmd = (
-        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"gcloud compute ssh swinvm15@k8s-master-01 "
         f"--zone=us-west1-a --project=beaming-age-463822-k7 "
         f"--command='{{cmd}}'"
     )
@@ -3603,7 +3603,7 @@ check_pod_health(
                                 <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
                                 <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
 gcloud compute ssh \\
-  pggo890@k8s-master-01 \\
+  swinvm15@k8s-master-01 \\
   --zone=us-west1-a \\
   --command="kubectl get pods \\
     -n kube-system -o json"</code></pre>
@@ -3699,7 +3699,7 @@ def describe_resource(
     
     # 2. Execute via gcloud SSH to K8s master
     ssh_cmd = (
-        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"gcloud compute ssh swinvm15@k8s-master-01 "
         f"--zone=us-west1-a --project=beaming-age-463822-k7 "
         f"--command='{{cmd}}'"
     )
@@ -3779,7 +3779,7 @@ describe_resource(
                                 <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
                                 <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
 gcloud compute ssh \\
-  pggo890@k8s-master-01 \\
+  swinvm15@k8s-master-01 \\
   --zone=us-west1-a \\
   --command="kubectl describe \\
     pod coredns-xxx \\
@@ -3862,7 +3862,7 @@ def get_node_resources() -> str:
     
     # 2. Execute via gcloud SSH to K8s master
     ssh_cmd = (
-        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"gcloud compute ssh swinvm15@k8s-master-01 "
         f"--zone=us-west1-a --project=beaming-age-463822-k7 "
         f"--command='{{cmd}}'"
     )
@@ -3925,7 +3925,7 @@ get_node_resources()</code></pre>
                                 <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
                                 <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
 gcloud compute ssh \\
-  pggo890@k8s-master-01 \\
+  swinvm15@k8s-master-01 \\
   --zone=us-west1-a \\
   --command="kubectl get nodes \\
     -o json"</code></pre>
@@ -4043,7 +4043,7 @@ def scale_deployment(
     
     # 2. Execute via gcloud SSH to K8s master
     ssh_cmd = (
-        f"gcloud compute ssh pggo890@k8s-master-01 "
+        f"gcloud compute ssh swinvm15@k8s-master-01 "
         f"--zone=us-west1-a --project=beaming-age-463822-k7 "
         f"--command='{{cmd}}'"
     )
@@ -4116,7 +4116,7 @@ scale_deployment(
                                 <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → K8s Cluster</h6>
                                 <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes:
 gcloud compute ssh \\
-  pggo890@k8s-master-01 \\
+  swinvm15@k8s-master-01 \\
   --zone=us-west1-a \\
   --command="kubectl scale \\
     deployment nginx \\
@@ -4208,7 +4208,7 @@ def query_prometheus_instant(
     '''Execute instant Prometheus query'''
     
     # 1. Build Prometheus API URL
-    PROMETHEUS_URL = "http://35.233.152.108:9090"
+    PROMETHEUS_URL = "http://34.53.50.194:9090"
     url = f"{{PROMETHEUS_URL}}/api/v1/query"
     
     # 2. Prepare query parameters
@@ -4294,7 +4294,7 @@ query_prometheus_instant(
                             <div style="background: #fff9c4; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px;">
                                 <h6 style="color: #f57c00; margin-bottom: 10px;">3️⃣ Tool → Prometheus</h6>
                                 <pre style="background: white; padding: 12px; border-radius: 5px; font-size: 11px; margin: 0;"><code># Tool executes HTTP request:
-GET http://35.233.152.108:9090/api/v1/query
+GET http://34.53.50.194:9090/api/v1/query
 
 Query params:
 query=100 - (avg by(instance)
@@ -4409,11 +4409,11 @@ Content-Type: application/json
                             <div style="background: #c8e6c9; padding: 20px; border-radius: 8px; border-left: 4px solid #4caf50;">
                                 <h5 style="color: #388e3c; margin-bottom: 15px;">2️⃣ MCP Server → K8s/Prometheus</h5>
                                 <pre style="background: white; padding: 15px; border-radius: 5px; font-size: 12px; margin: 0;"><code># For Kubernetes tools:
-SSH pggo890@k8s-master-01
+SSH swinvm15@k8s-master-01
 → kubectl get pods -n kube-system -o json
 
 # For Prometheus tools:
-GET http://35.233.152.108:9090/api/v1/query
+GET http://34.53.50.194:9090/api/v1/query
 → ?query=up</code></pre>
                             </div>
                         </div>
@@ -4603,7 +4603,7 @@ def docs_component_glossary():
                             <h4 style="color: #e6522c; margin-bottom: 20px; border-bottom: 2px solid #e6522c; padding-bottom: 10px;">📊 Prometheus</h4>
                             <div style="background: #fbe9e7; padding: 20px; border-radius: 8px; border-left: 4px solid #e6522c;">
                                 <p style="margin: 0; line-height: 1.8; color: #424242;">
-                                    <strong>Location:</strong> prometheus-monitoring-01 VM (35.233.152.108:9090)<br><br>
+                                    <strong>Location:</strong> prometheus-monitoring-01 VM (34.53.50.194:9090)<br><br>
                                     <strong>Scrapers:</strong> node_exporter (node metrics), cAdvisor (container metrics), 
                                     kube-state-metrics (K8s object state)<br><br>
                                     <strong>Access:</strong> HTTP API with PromQL query language
@@ -4693,7 +4693,7 @@ def validate_host():
             
             try:
                 # Set GCloud project first
-                project_id = 'project-f972fc71-9c5d-48d5-99f'
+                project_id = 'beaming-age-463822-k7'
                 subprocess.run(['gcloud', 'config', 'set', 'project', project_id], capture_output=True, timeout=5)
                 
                 # CPU check using gcloud ssh

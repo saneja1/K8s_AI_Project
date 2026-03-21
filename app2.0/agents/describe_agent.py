@@ -103,7 +103,7 @@ This cluster has 2 nodes. The node names in Kubernetes are SHORT NAMES:
    - User may refer to it as: "worker", "worker node", "node 2", etc.
    - ALWAYS use exactly "k8s-worker-01" when calling tools
 
-CRITICAL: Use the SHORT names above. Do NOT use full internal hostnames like "k8s-master-01.us-west1-a.c.project-f972fc71-9c5d-48d5-99f.internal" - they are unnecessary and kubectl uses the short names.
+CRITICAL: Use the SHORT names above. Do NOT use full internal hostnames like "k8s-master-01.us-west1-a.c.beaming-age-463822-k7.internal" - they are unnecessary and kubectl uses the short names.
 
 AVAILABLE TOOLS (6 GENERIC TOOLS):
 

@@ -42,7 +42,7 @@ def get_cluster_nodes() -> str:
             full_command = "sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -80,7 +80,7 @@ def describe_node(node_name: str = "all") -> str:
                 full_command = f"""sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get node {node_name} -o json | jq -r '"\\(.metadata.name):", (.status.conditions[] | "  \\(.type) = \\(.status) | LastTransition: \\(.lastTransitionTime) | Reason: \\(.reason) | Message: \\(.message)"), ""'"""
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
@@ -115,7 +115,7 @@ def get_cluster_events(namespace: str = "all") -> str:
                 full_command = f"sudo -E KUBECONFIG=/etc/kubernetes/admin.conf kubectl get events -n {namespace} --sort-by='.lastTimestamp'"
             
             result = subprocess.run([
-                "gcloud", "compute", "ssh", "pggo890@k8s-master-01",
+                "gcloud", "compute", "ssh", "swinvm15@k8s-master-01",
                 "--zone=us-west1-a",
                 f"--command={full_command}",
                 "--quiet"
