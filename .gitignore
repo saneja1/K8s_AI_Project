@@ -25,6 +25,10 @@ Thumbs.db
 # PID files
 *.pid
 
+# Database
+*.db
+instance/
+
 # Test coverage
 .coverage
 htmlcov/
@@ -33,3 +37,9 @@ htmlcov/
 # Streamlit
 .streamlit/
 .logs/
+
+# Ansible
+ansible/
+
+# Local-only files
+app2.0/README.md
